@@ -1,0 +1,233 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" font-family="Microsoft YaHei, PingFang SC, Noto Sans SC, sans-serif">
+  <style>
+    .t { fill: #1f2333; }
+    .m { fill: #5b6275; }
+    .s { fill: #8a90a2; }
+    .card { fill: #ffffff; stroke: #e6e8ef; }
+    .pill { fill: #f1f3f8; }
+    .pt { fill: #4b5163; font-size: 12px; }
+    .ttl { font-size: 15px; font-weight: 600; fill: #1f2333; }
+    .desc { font-size: 13px; fill: #5b6275; }
+    .foot { font-size: 12px; fill: #8a90a2; }
+    .fav { font-size: 14px; font-weight: 700; fill: #ffffff; }
+  </style>
+
+  <!-- 背景 -->
+  <rect width="1280" height="720" fill="#f5f6fa"/>
+
+  <!-- 顶栏 -->
+  <rect x="0" y="0" width="1280" height="64" fill="#ffffff"/>
+  <line x1="0" y1="64" x2="1280" y2="64" stroke="#e6e8ef"/>
+  <rect x="20" y="16" width="32" height="32" rx="8" fill="#4f6bed"/>
+  <text x="36" y="38" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">书</text>
+  <text x="62" y="39" font-size="18" font-weight="600" class="t">书签整理</text>
+
+  <rect x="280" y="14" width="520" height="36" rx="10" fill="#f3f4f8" stroke="#e2e5ee"/>
+  <circle cx="302" cy="31" r="6" fill="none" stroke="#8a90a2" stroke-width="1.6"/>
+  <line x1="306.5" y1="35.5" x2="311" y2="40" stroke="#8a90a2" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="322" y="37" font-size="14" class="s">搜索标题、说明、标签、网址</text>
+  <rect x="768" y="22" width="20" height="20" rx="4" fill="#ffffff" stroke="#dfe3ec"/>
+  <text x="778" y="37" text-anchor="middle" font-size="12" class="s">/</text>
+
+  <rect x="830" y="16" width="120" height="32" rx="8" fill="#f3f4f8"/>
+  <rect x="833" y="19" width="57" height="26" rx="6" fill="#ffffff" stroke="#e6e8ef"/>
+  <text x="861" y="37" text-anchor="middle" font-size="13" class="t">卡片</text>
+  <text x="920" y="37" text-anchor="middle" font-size="13" fill="#6b7183">列表</text>
+
+  <rect x="966" y="16" width="72" height="32" rx="8" fill="#ffffff" stroke="#dfe3ec"/>
+  <text x="1002" y="37" text-anchor="middle" font-size="13" class="t">体检</text>
+  <rect x="1050" y="16" width="96" height="32" rx="8" fill="#4f6bed"/>
+  <text x="1098" y="37" text-anchor="middle" font-size="13" font-weight="600" fill="#ffffff">✦ 整理</text>
+  <circle cx="1178" cy="32" r="16" fill="#f3f4f8"/>
+  <text x="1178" y="38" text-anchor="middle" font-size="16" fill="#4b5163">☾</text>
+  <circle cx="1222" cy="32" r="16" fill="#f3f4f8"/>
+  <text x="1222" y="38" text-anchor="middle" font-size="15" fill="#4b5163">⚙</text>
+
+  <!-- 左侧分类 -->
+  <rect x="0" y="64" width="248" height="656" fill="#ffffff"/>
+  <line x1="248" y1="64" x2="248" y2="720" stroke="#e6e8ef"/>
+  <text x="24" y="96" font-size="12" class="s">书签栏</text>
+
+  <rect x="12" y="108" width="224" height="30" rx="8" fill="#eef1fe"/>
+  <circle cx="30" cy="123" r="4" fill="#4f6bed"/>
+  <text x="44" y="128" font-size="14" font-weight="600" fill="#3b55d9">全部</text>
+  <text x="224" y="128" text-anchor="end" font-size="13" fill="#3b55d9">120</text>
+
+  <circle cx="30" cy="157" r="4" fill="#8b5cf6"/>
+  <text x="44" y="162" font-size="14" class="t">AI 与智能体</text>
+  <text x="224" y="162" text-anchor="end" font-size="13" class="s">20</text>
+  <circle cx="30" cy="191" r="4" fill="#f59e0b"/>
+  <text x="44" y="196" font-size="14" class="t">前端基础</text>
+  <text x="224" y="196" text-anchor="end" font-size="13" class="s">15</text>
+  <circle cx="30" cy="225" r="4" fill="#ec4899"/>
+  <text x="44" y="230" font-size="14" class="t">CSS 与界面</text>
+  <text x="224" y="230" text-anchor="end" font-size="13" class="s">15</text>
+  <circle cx="30" cy="259" r="4" fill="#10b981"/>
+  <text x="44" y="264" font-size="14" class="t">Vue 与框架</text>
+  <text x="224" y="264" text-anchor="end" font-size="13" class="s">15</text>
+  <circle cx="30" cy="293" r="4" fill="#0ea5e9"/>
+  <text x="44" y="298" font-size="14" class="t">工具与资源</text>
+  <text x="224" y="298" text-anchor="end" font-size="13" class="s">15</text>
+  <circle cx="30" cy="327" r="4" fill="#6366f1"/>
+  <text x="44" y="332" font-size="14" class="t">学习与社区</text>
+  <text x="224" y="332" text-anchor="end" font-size="13" class="s">10</text>
+  <circle cx="30" cy="361" r="4" fill="#14b8a6"/>
+  <text x="44" y="366" font-size="14" class="t">小程序与跨端</text>
+  <text x="224" y="366" text-anchor="end" font-size="13" class="s">10</text>
+  <circle cx="30" cy="395" r="4" fill="#f97316"/>
+  <text x="44" y="400" font-size="14" class="t">文档与编辑器</text>
+  <text x="224" y="400" text-anchor="end" font-size="13" class="s">10</text>
+  <circle cx="30" cy="429" r="4" fill="#64748b"/>
+  <text x="44" y="434" font-size="14" class="t">受保护资料</text>
+  <text x="80" y="434" font-size="12" class="s">🔒 锁定</text>
+  <text x="224" y="434" text-anchor="end" font-size="13" class="s">10</text>
+
+  <line x1="24" y1="458" x2="224" y2="458" stroke="#eceef3"/>
+  <text x="24" y="482" font-size="12" class="s">其他书签</text>
+  <circle cx="30" cy="505" r="4" fill="#a3a3a3"/>
+  <text x="44" y="510" font-size="14" class="t">待整理</text>
+  <text x="224" y="510" text-anchor="end" font-size="13" class="s">8</text>
+  <circle cx="30" cy="539" r="4" fill="#ef4444"/>
+  <text x="44" y="544" font-size="14" class="t">待清理</text>
+  <text x="224" y="544" text-anchor="end" font-size="13" class="s">2</text>
+
+  <text x="24" y="676" font-size="12" class="s">上次整理：还没有 · 快照 0 份</text>
+  <text x="24" y="700" font-size="11" fill="#a0a5b5">示意稿：分类名、数字、说明都是示例</text>
+
+  <!-- 标题行和筛选 -->
+  <text x="272" y="100" font-size="20" font-weight="700" class="t">全部</text>
+  <text x="320" y="100" font-size="14" class="s">120 条</text>
+  <text x="1256" y="100" text-anchor="end" font-size="13" class="s">按添加时间 ▾</text>
+
+  <rect x="272" y="116" width="84" height="28" rx="14" fill="#ffffff" stroke="#e2e5ee"/>
+  <text x="314" y="135" text-anchor="middle" font-size="13" class="m">冷门 <tspan fill="#6b7280" font-weight="600">24</tspan></text>
+  <rect x="366" y="116" width="72" height="28" rx="14" fill="#ffffff" stroke="#e2e5ee"/>
+  <text x="402" y="135" text-anchor="middle" font-size="13" class="m">重复 <tspan fill="#b45309" font-weight="600">3</tspan></text>
+  <rect x="448" y="116" width="92" height="28" rx="14" fill="#ffffff" stroke="#e2e5ee"/>
+  <text x="494" y="135" text-anchor="middle" font-size="13" class="m">要登录 <tspan fill="#6d28d9" font-weight="600">6</tspan></text>
+  <rect x="550" y="116" width="72" height="28" rx="14" fill="#ffffff" stroke="#e2e5ee"/>
+  <text x="586" y="135" text-anchor="middle" font-size="13" class="m">失效 <tspan fill="#dc2626" font-weight="600">—</tspan></text>
+  <rect x="632" y="116" width="92" height="28" rx="14" fill="#ffffff" stroke="#e2e5ee"/>
+  <text x="678" y="135" text-anchor="middle" font-size="13" class="m">待整理 <tspan fill="#4b5163" font-weight="600">8</tspan></text>
+
+  <!-- 卡片 1 -->
+  <g transform="translate(272,164)">
+    <rect width="312" height="164" rx="12" class="card"/>
+    <rect x="18" y="18" width="28" height="28" rx="7" fill="#fc5531"/>
+    <text x="32" y="37" text-anchor="middle" class="fav">C</text>
+    <text x="56" y="37" class="ttl">uniapp 权限检查，拉起系统授权</text>
+    <text x="18" y="70" class="desc">检查 App 有没有权限，没有就跳到系统</text>
+    <text x="18" y="90" class="desc">设置页去开；做权限提示时用</text>
+    <rect x="18" y="104" width="55" height="22" rx="11" class="pill"/><text x="45.5" y="119" text-anchor="middle" class="pt">uniapp</text>
+    <rect x="79" y="104" width="40" height="22" rx="11" class="pill"/><text x="99" y="119" text-anchor="middle" class="pt">权限</text>
+    <text x="18" y="152" class="foot">blog.csdn.net · 2025-08 添加</text>
+  </g>
+
+  <!-- 卡片 2 -->
+  <g transform="translate(608,164)">
+    <rect width="312" height="164" rx="12" class="card"/>
+    <rect x="18" y="18" width="28" height="28" rx="7" fill="#009a61"/>
+    <text x="32" y="37" text-anchor="middle" class="fav">S</text>
+    <text x="56" y="37" class="ttl">微信小程序网络请求封装</text>
+    <text x="18" y="70" class="desc">把 wx.request 包一层：统一拦截、</text>
+    <text x="18" y="90" class="desc">报错提示和加载状态</text>
+    <rect x="18" y="104" width="52" height="22" rx="11" class="pill"/><text x="44" y="119" text-anchor="middle" class="pt">小程序</text>
+    <rect x="76" y="104" width="64" height="22" rx="11" class="pill"/><text x="108" y="119" text-anchor="middle" class="pt">请求封装</text>
+    <text x="18" y="152" class="foot">segmentfault.com · 2020-07 添加</text>
+    <rect x="254" y="138" width="40" height="20" rx="10" fill="#f3f4f6"/><text x="274" y="152" text-anchor="middle" font-size="12" fill="#6b7280">冷门</text>
+  </g>
+
+  <!-- 卡片 3 -->
+  <g transform="translate(944,164)">
+    <rect width="312" height="164" rx="12" class="card"/>
+    <rect x="18" y="18" width="28" height="28" rx="7" fill="#2f6fde"/>
+    <text x="32" y="37" text-anchor="middle" class="fav">博</text>
+    <text x="56" y="37" class="ttl">按 Word 模板导出文档</text>
+    <text x="18" y="70" class="desc">用 docxtemplater 往 Word 模板里填数据</text>
+    <text x="18" y="90" class="desc">再导出；做合同、报表导出时用</text>
+    <rect x="18" y="104" width="40" height="22" rx="11" class="pill"/><text x="38" y="119" text-anchor="middle" class="pt">导出</text>
+    <rect x="64" y="104" width="42" height="22" rx="11" class="pill"/><text x="85" y="119" text-anchor="middle" class="pt">Word</text>
+    <text x="18" y="152" class="foot">cnblogs.com · 2024-03 添加</text>
+  </g>
+
+  <!-- 卡片 4 -->
+  <g transform="translate(272,348)">
+    <rect width="312" height="164" rx="12" class="card"/>
+    <rect x="18" y="18" width="28" height="28" rx="7" fill="#1772f6"/>
+    <text x="32" y="37" text-anchor="middle" class="fav">知</text>
+    <text x="56" y="37" class="ttl">OpenClaw 保姆级教程</text>
+    <text x="18" y="70" class="desc">OpenClaw 从安装、配置到日常用法的</text>
+    <text x="18" y="90" class="desc">完整教程，2 万字</text>
+    <rect x="18" y="104" width="29" height="22" rx="11" class="pill"/><text x="32.5" y="119" text-anchor="middle" class="pt">AI</text>
+    <rect x="53" y="104" width="49" height="22" rx="11" class="pill"/><text x="77.5" y="119" text-anchor="middle" class="pt">Agent</text>
+    <text x="18" y="152" class="foot">zhuanlan.zhihu.com · 2026-03 添加</text>
+    <rect x="230" y="138" width="64" height="20" rx="10" fill="#dcfce7"/><text x="262" y="152" text-anchor="middle" font-size="12" fill="#15803d">近期打开</text>
+  </g>
+
+  <!-- 卡片 5 -->
+  <g transform="translate(608,348)">
+    <rect width="312" height="164" rx="12" class="card"/>
+    <rect x="18" y="18" width="28" height="28" rx="7" fill="#2f6fde"/>
+    <text x="32" y="37" text-anchor="middle" class="fav">博</text>
+    <text x="56" y="37" class="ttl">修改 ElementUI 样式的几种方式</text>
+    <text x="18" y="70" class="desc">深度选择器、全局覆盖、自定义主题</text>
+    <text x="18" y="90" class="desc">三种改法的写法和区别</text>
+    <rect x="18" y="104" width="62" height="22" rx="11" class="pill"/><text x="49" y="119" text-anchor="middle" class="pt">Element</text>
+    <rect x="86" y="104" width="36" height="22" rx="11" class="pill"/><text x="104" y="119" text-anchor="middle" class="pt">CSS</text>
+    <text x="18" y="152" class="foot">cnblogs.com · 2020-11 添加</text>
+    <rect x="254" y="138" width="40" height="20" rx="10" fill="#f3f4f6"/><text x="274" y="152" text-anchor="middle" font-size="12" fill="#6b7280">冷门</text>
+  </g>
+
+  <!-- 卡片 6 -->
+  <g transform="translate(944,348)">
+    <rect width="312" height="164" rx="12" class="card"/>
+    <rect x="18" y="18" width="28" height="28" rx="7" fill="#fc5531"/>
+    <text x="32" y="37" text-anchor="middle" class="fav">C</text>
+    <text x="56" y="37" class="ttl">pnpm 基本使用教程</text>
+    <text x="18" y="70" class="desc">pnpm 的安装、常用命令，以及常见报错</text>
+    <text x="18" y="90" class="desc">怎么解决</text>
+    <rect x="18" y="104" width="42" height="22" rx="11" class="pill"/><text x="39" y="119" text-anchor="middle" class="pt">pnpm</text>
+    <rect x="66" y="104" width="52" height="22" rx="11" class="pill"/><text x="92" y="119" text-anchor="middle" class="pt">包管理</text>
+    <text x="18" y="152" class="foot">blog.csdn.net · 2025-04 添加</text>
+  </g>
+
+  <!-- 卡片 7 -->
+  <g transform="translate(272,532)">
+    <rect width="312" height="164" rx="12" class="card"/>
+    <rect x="18" y="18" width="28" height="28" rx="7" fill="#009a61"/>
+    <text x="32" y="37" text-anchor="middle" class="fav">S</text>
+    <text x="56" y="37" class="ttl">H5 浏览器桌面通知</text>
+    <text x="18" y="70" class="desc">用 Notification API 弹浏览器桌面通知</text>
+    <text x="18" y="90" class="desc">的示例，含权限申请流程</text>
+    <rect x="18" y="104" width="40" height="22" rx="11" class="pill"/><text x="38" y="119" text-anchor="middle" class="pt">通知</text>
+    <rect x="64" y="104" width="29" height="22" rx="11" class="pill"/><text x="78.5" y="119" text-anchor="middle" class="pt">H5</text>
+    <text x="18" y="152" class="foot">segmentfault.com · 2020-02 添加</text>
+    <rect x="254" y="138" width="40" height="20" rx="10" fill="#fee2e2"/><text x="274" y="152" text-anchor="middle" font-size="12" fill="#dc2626">失效</text>
+  </g>
+
+  <!-- 卡片 8 -->
+  <g transform="translate(608,532)">
+    <rect width="312" height="164" rx="12" class="card"/>
+    <rect x="18" y="18" width="28" height="28" rx="7" fill="#fc5531"/>
+    <text x="32" y="37" text-anchor="middle" class="fav">C</text>
+    <text x="56" y="37" class="ttl">Storage 事件不触发的原因</text>
+    <text x="18" y="70" class="desc">同一页面里改 localStorage 不会触发</text>
+    <text x="18" y="90" class="desc">storage 事件：原因和替代做法</text>
+    <rect x="18" y="104" width="94" height="22" rx="11" class="pill"/><text x="65" y="119" text-anchor="middle" class="pt">localStorage</text>
+    <text x="18" y="152" class="foot">blog.csdn.net · 2021-06 添加</text>
+    <rect x="254" y="138" width="40" height="20" rx="10" fill="#fef3c7"/><text x="274" y="152" text-anchor="middle" font-size="12" fill="#b45309">重复</text>
+  </g>
+
+  <!-- 卡片 9 -->
+  <g transform="translate(944,532)">
+    <rect width="312" height="164" rx="12" class="card"/>
+    <rect x="18" y="18" width="28" height="28" rx="7" fill="#1772f6"/>
+    <text x="32" y="37" text-anchor="middle" class="fav">知</text>
+    <text x="56" y="37" class="ttl">我是怎么搭建前端工程化的</text>
+    <text x="18" y="70" class="desc">讲前端工程化怎么落地：规范、脚手架、</text>
+    <text x="18" y="90" class="desc">构建和发布流程</text>
+    <rect x="18" y="104" width="52" height="22" rx="11" class="pill"/><text x="44" y="119" text-anchor="middle" class="pt">工程化</text>
+    <rect x="76" y="104" width="40" height="22" rx="11" class="pill"/><text x="96" y="119" text-anchor="middle" class="pt">架构</text>
+    <text x="18" y="152" class="foot">zhuanlan.zhihu.com · 2024-09 添加</text>
+  </g>
+</svg>

@@ -1,0 +1,34 @@
+{
+  "name": "bookmark-tidy",
+  "description": "书签整理：Chrome 书签智能整理扩展",
+  "private": true,
+  "license": "MIT",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "build:e2e": "wxt build --mode e2e",
+    "zip": "wxt zip",
+    "compile": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "audit": "node tools/audit-bookmarks.mjs",
+    "icons": "node tools/make-icons.mjs",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "defuddle": "^0.19.6",
+    "vue": "^3.5.44"
+  },
+  "devDependencies": {
+    "@wxt-dev/module-vue": "^1.0.3",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.5",
+    "vue-tsc": "^3.3.14",
+    "wxt": "^0.21.5"
+  },
+  "optionalDependencies": {
+    "@rolldown/binding-win32-x64-msvc": "1.2.16",
+    "lightningcss-win32-x64-msvc": "1.33.0"
+  }
+}

@@ -1,0 +1,12 @@
+node_modules/
+.output/
+.wxt/
+dist/
+*.log
+.env
+.env.*
+# 本机生成的统计、备份、导出，可能含书签网址，不进仓库
+tmp/
+*.local
+*.local.*
+书签备份-*.json
