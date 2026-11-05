@@ -36,6 +36,8 @@ body.popup {
   display: grid;
   gap: 4px;
   padding: 4px 8px;
+  /* 「没放成」后面是接口返回的原文，可能是一长串不带空格的 JSON / HTML：随处能断行，不撑宽弹窗 */
+  overflow-wrap: anywhere;
 }
 
 .pop-links {

@@ -398,6 +398,8 @@ export function createAutoFiler(deps: AutoFilerDeps) {
     const flat = await tree()
     const check = checkJob(job, flat, { lockedIds: context(flat, s).lockedIds, records: await store.getRecords(), own: new Set(await store.getOwn()) })
     if (check.drop) return
+    // 等待期里你在管理页放好了：不再抓网页、问 AI（提交时 commitOne 还会再查一次）
+    if ((await store.getHandPlaced()).includes(job.bookmarkId)) return
     const tabs = await deps.tabs.query({}).catch(() => [])
     const tab = tabs.find((t) => sameUrl(t.url || '', job.url))
     const prep = await prepare({ id: job.bookmarkId, url: job.url, title: job.title, tabId: tab?.id, useTab: true }, flat, s, false)

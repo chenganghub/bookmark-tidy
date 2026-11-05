@@ -433,6 +433,8 @@ export interface ApplyLog {
   /** 撤销时重建的节点：快照 id → 新 id（撤销中断后重跑用） */
   undoIdMap: Record<string, string>
   undoReport?: UndoReport
+  /** bookmark-ux：这次应用完成时，因为方案里没勾才新记进「你定过位置的」的 id；撤销这次应用时拿掉 */
+  placedIds?: string[]
 }
 
 /** apply.ts 需要的存储；store.ts 用 chrome.storage.local 实现，测试用内存实现 */

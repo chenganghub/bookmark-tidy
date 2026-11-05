@@ -116,10 +116,15 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
     return { usage: r.usage, failedIds: r.failedIds }
   }
 
-  /** 应用完成后，方案里没勾的算你定了不动：记进「你定过位置的」，之后一键整理不再挪它 */
+  /** 应用完成后，方案里没勾的算你定了不动：记进「你定过位置的」，之后一键整理不再挪它。这次新记的写进日志，撤销这次应用时拿掉 */
   async function keepDisabled(plan: Plan, log: ApplyLog): Promise<ApplyLog> {
-    if (log.status === 'done') await store.addHandPlaced(plan.items.filter((i) => !i.enabled).map((i) => i.bookmarkId))
-    return log
+    if (log.status !== 'done') return log
+    const before = new Set(await store.getHandPlaced())
+    const ids = plan.items.filter((i) => !i.enabled).map((i) => i.bookmarkId)
+    await store.addHandPlaced(ids)
+    const next = { ...log, placedIds: ids.filter((id) => !before.has(id)) }
+    await store.saveLog(next)
+    return next
   }
 
   const workflow: Workflow = {
@@ -300,7 +305,12 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
       const snapshot = await store.getSnapshot(log.snapshotId)
       if (!snapshot) throw new Error('这次应用的快照已经被清掉了，请用备份文件恢复')
       // 重建出来的书签每建一条就记进 autoOwn：后台的自动整理不碰它们
-      return lock.run('undo', () => undoApply(bookmarks, log, snapshot, store, { onProgress, now, onRebuilt: (newId) => store.addOwn([newId]) }))
+      return lock.run('undo', async () => {
+        const done = await undoApply(bookmarks, log, snapshot, store, { onProgress, now, onRebuilt: (newId) => store.addOwn([newId]) })
+        // 撤销完了：应用时因为「方案里没勾」才记成你定过位置的，跟着拿掉（回到应用前的样子）
+        if (done.status === 'undone' && log.placedIds?.length) await store.removeHandPlaced(log.placedIds)
+        return done
+      })
     },
 
     getLatestApply: () => store.getLatestLog(),
@@ -333,13 +343,11 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
 
     moveBookmarks: (ids, target) =>
       lock.run('manual', async () => {
-        // 锁定的文件夹（含子文件夹）不能往里放：界面上的清单可能是锁定之前算的
+        // 锁定的文件夹（含子文件夹）不能往里放、也不能在里面新建：界面上的清单可能是锁定之前算的。先查再动手
         const { flat } = await loadTree()
         const locked = descendantFolderIds(flat, lockedIds(flat, await settings()))
-        let folderId: string
-        if ('folderId' in target) folderId = target.folderId
-        else folderId = await ensureFolder(bookmarks, target.newFolder.parentId, target.newFolder.title, locked)
-        if (locked.has(folderId) || ('newFolder' in target && locked.has(target.newFolder.parentId))) throw new Error('这个文件夹锁定了，不能往里放')
+        if (locked.has('folderId' in target ? target.folderId : target.newFolder.parentId)) throw new Error('这个文件夹锁定了，不能往里放')
+        const folderId = 'folderId' in target ? target.folderId : await ensureFolder(bookmarks, target.newFolder.parentId, target.newFolder.title, locked)
         const records = await store.getRecords()
         const before = new Set(await store.getHandPlaced())
         const change = await moveBookmarks(bookmarks, ids, folderId)

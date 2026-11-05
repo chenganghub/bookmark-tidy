@@ -703,6 +703,8 @@ describe('bookmark-ux：角标的 N、待处理的 M', () => {
     await t.later()
     expect(await t.parentOf(a.id)).toBe('2')
     expect(await t.store.getRecord(a.id)).toBeUndefined()
+    // 放好了的不再抓网页、问 AI
+    expect(t.prompts.filter((p) => p[1].content.split('\n')[1].startsWith(`${a.id} |`))).toHaveLength(0)
     expect(await t.parentOf(b.id)).toBe('FC')
     expect(await t.store.getHandPlaced()).toContain(b.id)
   })

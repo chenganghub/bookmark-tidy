@@ -73,9 +73,14 @@ export default defineBackground(() => {
     clearTimeout(badgeTimer)
     badgeTimer = setTimeout(() => void updateBadge(), 2000)
   }
+  /** 角标上的数：设置里关掉「工具栏角标」时是 0（弹窗里的 N 照常） */
+  async function badgeCount(): Promise<number> {
+    if (!(await store.getSettings()).badge) return 0
+    return (await filer.unfiled()).length
+  }
   async function updateBadge() {
-    // 设置里关掉「工具栏角标」时不显示（弹窗里的 N 照常）
-    const n = (await store.getSettings()).badge ? (await filer.unfiled().catch(() => [])).length : 0
+    // 读存储出错（扩展正在更新之类）时先不显示，下次书签变化再算
+    const n = await badgeCount().catch(() => 0)
     await browser.action.setBadgeBackgroundColor({ color: '#8E8E93' })
     await browser.action.setBadgeText({ text: n ? (n > 99 ? '99+' : String(n)) : '' })
   }

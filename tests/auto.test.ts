@@ -146,6 +146,9 @@ describe('一条收藏还能不能动', () => {
     expect(checkJob(job({ url: 'https://other.com' }), flat, ctx())).toEqual({ drop: 'url-changed' })
     expect(checkJob(job(), flatWith(['新收藏', 'https://new.com', {}, 'n1'], 'locked'), ctx())).toEqual({ drop: 'locked' })
     expect(checkJob(job(), flatWith(['新收藏', 'https://new.com', {}, 'n1'], 'cleanup'), ctx())).toEqual({ drop: 'parked' })
+    // 收藏时自己选了「待整理」：算你先放着，不自动挪
+    const inInbox = flattenTree(treeOf([], [folder('待整理', [link('新收藏', 'https://new.com', {}, 'n1')], 'FIN')]))
+    expect(checkJob(job({ parentId: 'FIN' }), inInbox, ctx())).toEqual({ drop: 'parked' })
   })
 })
 

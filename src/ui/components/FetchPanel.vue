@@ -80,7 +80,9 @@ async function replan(save?: () => Promise<void>) {
     const next = await workflow().planFetch()
     if (seq === replanSeq && plan.value) plan.value = next
   } catch (e) {
+    // 没算出新清单：旧清单不再能用（不拿它开抓），回到「抓取网页信息」，重新点一次
     error.value = errorText(e)
+    if (seq === replanSeq) plan.value = null
   } finally {
     if (seq === replanSeq) replanning.value = false
   }
@@ -138,7 +140,8 @@ const paused = computed(() => !!progress.value?.paused)
         <summary class="disclose"><Icon name="chevron" :size="14" />文件夹</summary>
         <div class="row-gap" style="margin: 8px 0 0 4px">
           <label v-for="x in folders" :key="x.id" class="check">
-            <input type="checkbox" :checked="!x.excluded" @change="toggleFolder(x.id, ($event.target as HTMLInputElement).checked)" />
+            <!-- 重算清单时先不让再勾：每次改的是整份排除名单，连着改会互相覆盖 -->
+            <input type="checkbox" :checked="!x.excluded" :disabled="replanning" @change="toggleFolder(x.id, ($event.target as HTMLInputElement).checked)" />
             <span>{{ x.title }}</span>
             <span v-if="!x.excluded" class="secondary">{{ x.n }}</span>
           </label>
@@ -148,7 +151,7 @@ const paused = computed(() => !!progress.value?.paused)
         <summary class="disclose"><Icon name="chevron" :size="14" />域名</summary>
         <div class="row-gap" style="margin: 8px 0 0 4px">
           <label v-for="d in domains" :key="d.host" class="check">
-            <input type="checkbox" :checked="!d.excluded" @change="toggleDomain(d.host, ($event.target as HTMLInputElement).checked)" />
+            <input type="checkbox" :checked="!d.excluded" :disabled="replanning" @change="toggleDomain(d.host, ($event.target as HTMLInputElement).checked)" />
             <span>{{ d.host }}</span>
             <span v-if="!d.excluded" class="secondary">{{ d.n }}</span>
           </label>

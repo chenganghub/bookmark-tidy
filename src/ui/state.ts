@@ -261,13 +261,14 @@ export function restoreNotice(r: UndoReport, kind: 'undone' | 'restored' = 'rest
 
 const withSkipped = (text: string, skipped: number) => (skipped ? `${text} · 跳过 ${skipped}` : text)
 
-/** 一次手动操作：同一时刻只做一件（应用、撤销进行中也不做）；做完刷新，结果条带「撤销」 */
+/** 一次手动操作：同一时刻只做一件（应用、撤销进行中也不做）；做完刷新，真的动了书签时结果条带「撤销」 */
 async function manual(run: () => Promise<ManualChange>, text: (c: ManualChange) => string) {
   if (state.busy) return
   state.busy = true
   try {
     const change = await run()
-    state.notice = { kind: 'manual', text: withSkipped(text(change), change.skipped), change }
+    const changed = change.moved.length + change.removed.length > 0
+    state.notice = { kind: 'manual', text: withSkipped(text(change), change.skipped), ...(changed ? { change } : {}) }
   } catch (e) {
     state.notice = { kind: 'error', text: errorText(e) }
   } finally {
@@ -276,11 +277,11 @@ async function manual(run: () => Promise<ManualChange>, text: (c: ManualChange) 
   }
 }
 
-/** 已经在那个文件夹里的不动；一条都没动时不报「已放到」 */
+/** 已经在那个文件夹里的不动；一条都没动时不报「已放到」：书签已经不在了（记成跳过）写「没放成」，本来就在那里写「本来就在」 */
 export const moveTo = (ids: string[], target: MoveTarget, label: string) =>
   manual(
     () => workflow().moveBookmarks(ids, target),
-    (c) => (c.moved.length ? `已放到「${label}」` : `本来就在「${label}」`)
+    (c) => (c.moved.length ? `已放到「${label}」` : c.skipped ? '没放成' : `本来就在「${label}」`)
   )
 
 /** 删书签；backup 时先下载整棵树的备份（批量删用） */

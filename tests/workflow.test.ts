@@ -448,6 +448,8 @@ describe('bookmark-ux：待处理和手动操作', () => {
     await expect(wf.moveBookmarks(['o1'], { folderId: 'LOCK' })).rejects.toThrow('锁定')
     await expect(wf.moveBookmarks(['o1'], { newFolder: { parentId: 'LOCK', title: '新' } })).rejects.toThrow('锁定')
     expect((await api.get('o1'))[0].parentId).toBe('2')
+    // 先查锁定再动手：锁定的文件夹里没有多出新建的文件夹
+    expect((await api.getChildren('LOCK')).map((c) => c.title)).toEqual(['空的'])
     const change = await wf.removeFolders(['LE', 'FE'])
     expect(change.removed.map((r) => r.id)).toEqual(['FE'])
     expect(change.skipped).toBe(1)
@@ -465,13 +467,19 @@ describe('bookmark-ux：待处理和手动操作', () => {
   })
 
 
-  it('K3 应用完成后，方案里没勾的记成你定过位置', async () => {
+  it('K3 应用完成后，方案里没勾的记成你定过位置；撤销这次应用后拿掉（以前就记过的留着）', async () => {
     const { wf, kv } = setup()
+    const store = createStore(kv)
+    await store.addHandPlaced(['o2'])
     const { plan } = await wf.buildPlan(planOptions(), () => {})
-    const edited = { ...plan, items: plan.items.map((i) => (i.bookmarkId === 'o3' ? { ...i, enabled: false } : i)) }
+    const edited = { ...plan, items: plan.items.map((i) => (i.bookmarkId === 'o3' || i.bookmarkId === 'o2' ? { ...i, enabled: false } : i)) }
     await wf.savePlan(edited)
-    expect((await wf.apply(edited, () => {})).status).toBe('done')
-    expect(await createStore(kv).getHandPlaced()).toEqual(['o3'])
+    const log = await wf.apply(edited, () => {})
+    expect(log.status).toBe('done')
+    expect((await store.getHandPlaced()).sort()).toEqual(['o2', 'o3'])
+    expect(log.placedIds).toEqual(['o3'])
+    expect((await wf.undo(log.applyId, () => {})).status).toBe('undone')
+    expect(await store.getHandPlaced()).toEqual(['o2'])
   })
 
   it('T2、T5 待处理清单：应用后待整理、待清理里的都列出来', async () => {
