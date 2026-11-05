@@ -241,11 +241,14 @@ try {
   const nPub = notices[`bt:${b.pub}`] !== undefined
   const before = await ev(`chrome.bookmarks.get(${JSON.stringify(b.pub)}).then((r) => r[0])`)
   const pageUrls = async () => (await browser.cdp.send('Target.getTargets')).targetInfos.map((t) => t.url)
+  // 标签页全程不关：按点之前、之后的个数比，不看「有没有」
+  const triageTabs = async () => (await pageUrls()).filter((u) => u === `chrome-extension://${browser.extId}/manager.html?view=triage`).length
+  const inboxBmTabs = async () => (await pageUrls()).filter((u) => u.startsWith(`chrome://bookmarks/?id=${inbox}`)).length
+  const [tri0, bm0] = [await triageTabs(), await inboxBmTabs()]
   await send('e2e:notice-button', { nid: `bt:${b.unsure}`, button: 1 })
   await sleep(500)
-  const triageTab = (await pageUrls()).some((u) => u === `chrome-extension://${browser.extId}/manager.html?view=triage`)
-  const inboxBmTab = (await pageUrls()).some((u) => u.startsWith(`chrome://bookmarks/?id=${inbox}`))
-  record('O4', triageTab && !inboxBmTab, `进了待整理的那条点「改位置」：打开管理页的待处理 ${triageTab}；没打开 Chrome 书签管理器 ${!inboxBmTab}`)
+  const [tri1, bm1] = [await triageTabs(), await inboxBmTabs()]
+  record('O4', tri1 === tri0 + 1 && bm1 === bm0, `进了待整理的那条点「改位置」：管理页的待处理标签页 ${tri0} → ${tri1}；Chrome 书签管理器里待整理的标签页 ${bm0} → ${bm1}`)
   await send('e2e:notice-button', { nid: `bt:${b.pub}`, button: 1 })
   await sleep(500)
   const bmTab = (await pageUrls()).some((u) => u.startsWith(`chrome://bookmarks/?id=${ids.vue}`))
@@ -348,6 +351,9 @@ try {
   await send('auto:run')
   const done1 = await waitBatch('done')
   const after1 = await send('auto:status')
+  // K1：这时只剩待整理里的那条，角标是空的
+  const badgeAfter1 = await send('e2e:badge')
+  record('K1-角标空', after1.unfiled === 0 && after1.pending >= 1 && badgeAfter1 === '', `只剩待整理里的（待处理 M = ${after1.pending}）：弹窗的 N = ${after1.unfiled}，角标文字「${badgeAfter1}」`)
   const noTabNow = await parentOf(b.noTab)
   // 通知里点过「撤销」的那条（A5）也在其他书签根下，但用户撤销过，不算；待整理里的那条（bookmark-ux K1）不算
   const undoneStays = (await parentOf(b.pub)) === ids.other
@@ -371,15 +377,25 @@ try {
   const wantPath = new Map(preview.items.map((i) => [i.title, i.path]))
   const listOk = shownRows.length === preview.items.length && shownRows.every((r) => r.path && r.path === wantPath.get(r.title) && r.checked)
   const unmovedDuringPreview = (await Promise.all(many.map(parentOf))).every((p) => p === ids.other)
-  await send('auto:apply-batch', { batchId: preview.id, ids: [many[1], many[2]] })
+  // 勾 3 条：拿不准的那条（去向「待整理」）和两条有把握的
+  await send('auto:apply-batch', { batchId: preview.id, ids: [many[0], many[1], many[2]] })
   const done2 = await waitBatch('done')
   const moved2 = await Promise.all(many.map(parentOf))
   const after2 = await send('auto:status')
-  record('B2', preview.items.length >= 12 && listOk && unmovedDuringPreview && moved2[1] === ids.ai && moved2[2] === ids.ai && moved2.slice(3).every((p) => p === ids.other),
-    `超过 10 条（${preview.items.length} 条）先出预览；弹窗里列出 ${shownRows.length} 行，每行写着去向（如「${shownRows[0]?.title}」→「${shownRows[0]?.path}」「${shownRows[1]?.title}」→「${shownRows[1]?.path}」）、默认勾上：${listOk}；预览期间一条没动：${unmovedDuringPreview}；只勾 2 条，放好 ${done2.result.filed}、跳过 ${done2.result.skipped}；没勾的都没动`)
+  record('B2', preview.items.length >= 12 && listOk && unmovedDuringPreview && moved2[0] === inbox && moved2[1] === ids.ai && moved2[2] === ids.ai && moved2.slice(3).every((p) => p === ids.other),
+    `超过 10 条（${preview.items.length} 条）先出预览；弹窗里列出 ${shownRows.length} 行，每行写着去向（如「${shownRows[0]?.title}」→「${shownRows[0]?.path}」「${shownRows[1]?.title}」→「${shownRows[1]?.path}」）、默认勾上：${listOk}；预览期间一条没动：${unmovedDuringPreview}；只勾 3 条，放好 ${done2.result.filed}、进待整理 ${done2.result.toInbox}、跳过 ${done2.result.skipped}；拿不准的那条进了待整理：${moved2[0] === inbox}；没勾的都没动`)
+  // K7：弹窗里的结果写「N 条拿不准，在待整理里」，点「去处理」打开管理页的待处理
+  const pr = await browser.open('popup.html')
+  const resultText = await pr.waitFor(`document.querySelector('.pop-result')?.textContent.replace(/\\s+/g, ' ').trim() ?? null`, 15000).catch(() => null)
+  const tri2 = await triageTabs()
+  await pr.evaluate(`([...document.querySelectorAll('.pop-result .link')].find((b) => b.textContent.trim() === '去处理')?.click(), true)`).catch(() => {})
+  await sleep(1000)
+  const tri3 = await triageTabs()
+  record('K7', !!resultText && resultText.includes(`${done2.result.toInbox} 条拿不准，在待整理里`) && done2.result.toInbox === 1 && tri3 === tri2 + 1,
+    `弹窗结果「${resultText}」；点「去处理」后管理页的待处理标签页 ${tri2} → ${tri3}`)
   const placed = (await local('handPlaced')) ?? []
   record('K2-预览没勾的', after2.unfiled === 0 && many.slice(3).every((id) => placed.includes(id)),
-    `预览里没勾的 ${many.length - 2} 条记成你定过位置：${many.slice(3).every((id) => placed.includes(id))}；之后「放好 N 条」的 N = ${after2.unfiled}`)
+    `预览里没勾的 ${many.slice(3).length} 条记成你定过位置：${many.slice(3).every((id) => placed.includes(id))}；之后「放好 N 条」的 N = ${after2.unfiled}`)
 
   // ---------------------------------------------------------------- C1 地址栏
   const sugg = await send('e2e:search', { q: '响应式 原理' })
@@ -453,7 +469,6 @@ try {
   // ---------------------------------------------------------------- K6 弹窗里的「待处理 M」打开管理页的待处理
   const pt = await browser.open('popup.html')
   const pendingText = await pt.waitFor(`document.querySelector('.pop-pending')?.textContent.replace(/\\s+/g, '') ?? null`, 15000).catch(() => null)
-  const triageTabs = async () => (await pageUrls()).filter((u) => u === `chrome-extension://${browser.extId}/manager.html?view=triage`).length
   const triage0 = await triageTabs()
   await pt.evaluate(`(document.querySelector('.pop-pending').click(), true)`).catch(() => {})
   await sleep(1000)
