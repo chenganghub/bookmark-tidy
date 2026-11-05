@@ -174,6 +174,8 @@ export function buildPlan(input: {
     if (rule !== title) item.ruleTitle = rule
     const ai = input.meta[b.id]?.title?.trim()
     if (ai && ai !== title) item.aiTitle = ai
+    // 把握不够进待整理：记下 AI 给的目录，应用后待处理里预选它
+    if (reason === 'low-confidence' && c) item.guess = c.path
     item.useRuleTitle = options.ruleTitles && !!item.ruleTitle
     return item
   })

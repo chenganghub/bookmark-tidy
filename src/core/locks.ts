@@ -3,7 +3,8 @@
 // 没有 navigator.locks（node 单测）时退回进程内的互斥。
 import type { KV } from './types'
 
-export type MutationOp = 'apply' | 'undo' | 'restore' | 'auto' | 'button'
+/** manual：管理页「待处理」和卡片上的移动、删除、撤销（bookmark-ux） */
+export type MutationOp = 'apply' | 'undo' | 'restore' | 'auto' | 'button' | 'manual'
 
 export const LOCK_NAME = 'bt-bookmarks'
 /** 会话存储里记着当前持锁的操作（看板、弹窗显示用；真正的互斥靠锁本身） */

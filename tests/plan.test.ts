@@ -90,6 +90,9 @@ describe('buildPlan', () => {
     expect(by.v2).toEqual([INBOX, 'not-in-tree'])
     expect(by.v3).toEqual([INBOX, 'not-in-tree'])
     expect(by.v4).toEqual([INBOX, 'ai-failed'])
+    // O3：把握不够的记下 AI 给的目录（应用后待处理里预选）；不在树上的、没有结果的不记
+    const guess = Object.fromEntries(plan.items.map((i) => [i.bookmarkId, i.guess]))
+    expect(guess).toMatchObject({ v0: undefined, v1: '前端/Vue', v2: undefined, v3: undefined, v4: undefined })
   })
 
   it('失效进待清理；重复保留最近打开 → 最早添加 → id 最小的', () => {

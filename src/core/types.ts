@@ -344,6 +344,8 @@ export interface PlanItem {
   useAiTitle: boolean
   /** 取消勾选 = 这条不动 */
   enabled: boolean
+  /** 置信度不够进待整理时，AI 给的目录（方案目录 key）：应用后待处理里预选它 */
+  guess?: string
 }
 
 export interface PlanOptions {
@@ -496,6 +498,74 @@ export interface AutoJob {
 
 export type AutoStatus = 'filed' | 'inbox' | 'undone' | 'moved-by-user'
 
+// ---------------------------------------------------------------- bookmark-ux：待处理（triage.ts）和手动操作（manual.ts）
+
+/** 「放到」的一个选项：书签栏下前两层的文件夹，path 写成「父 / 子」 */
+export interface FolderChoice {
+  id: string
+  path: string
+}
+
+export type CleanupReason =
+  | { kind: 'dead'; httpStatus?: number } // 抓取结果是失效（404、410）
+  | { kind: 'duplicate'; otherPath: string } // 待清理以外还有同一网址的一条
+  | { kind: 'unreachable' } // 连不上
+  | { kind: 'other' } // 原因已经不在了（另一条没了、只在待清理里互为重复、链接又能打开）
+
+export interface TriageEntry {
+  bookmark: FlatBookmark
+  /** 拿不准放哪的：AI 当时猜的目录（还在、能放的才有） */
+  guess?: FolderChoice
+  /** 建议删除的：为什么建议删 */
+  reason?: CleanupReason
+}
+
+/** 一组空文件夹：最上层那个和它的全部子孙（都没有书签），ids 深的在前（删除顺序） */
+export interface EmptyGroup {
+  folder: FlatFolder
+  ids: string[]
+}
+
+export interface Triage {
+  /** 拿不准放哪：「待整理」和「整理前的空文件夹」里的书签 */
+  unsure: TriageEntry[]
+  /** 建议删除：「待清理」里的书签 */
+  cleanup: TriageEntry[]
+  empty: EmptyGroup[]
+}
+
+/** 删掉的一个节点：没有 url 的是文件夹。index 是删那一步之前那一刻的位置 */
+export interface RemovedNode {
+  id: string
+  parentId: string
+  index: number
+  title: string
+  url?: string
+}
+
+/** 待处理和卡片上的一次手动操作，结果条的「撤销」用（只在管理页内存里留最近一次） */
+export interface ManualChange {
+  kind: 'move' | 'delete'
+  at: number
+  /** 按执行顺序；from.index 是移那一步之前那一刻的位置。撤销倒着来 */
+  moved: { id: string; from: { parentId: string; index: number }; to: string }[]
+  /** 按执行顺序（删空文件夹时深的在前）。撤销倒着来 */
+  removed: RemovedNode[]
+  /** 删掉的书签所在文件夹的祖先链（不含根）：撤销时文件夹也没了就按它重建 */
+  folders: Record<string, RemovedNode>
+  /** 这次新记进「你定过位置的」的 id：撤销时移出去 */
+  placed: string[]
+  /** 移动前的自动整理记录：撤销时写回去 */
+  records: Record<string, AutoRecord>
+  /** 操作时已经不在的、出错的、删空文件夹时里面又有了东西的 */
+  skipped: number
+  /** 撤销时重建出来的：旧 id → 新 id。撤销中途出错，再点一次从这里接着做 */
+  rebuilt: Record<string, string>
+}
+
+/** 移到现有文件夹，或新建一个（同一个父文件夹下已有同名、没锁定的就直接用它） */
+export type MoveTarget = { folderId: string } | { newFolder: { parentId: string; title: string } }
+
 /** 自动整理动过的一条（chrome.storage.local），撤销和统计用 */
 export interface AutoRecord {
   bookmarkId: string
@@ -598,4 +668,16 @@ export interface Workflow {
 
   /** 估算费用（美元），按高峰价 */
   estimateCost(usage: AiUsage): number
+
+  // ---- bookmark-ux：待处理和手动操作，都在改书签的锁里跑
+  /** 拿不准放哪、建议删除、空文件夹三类清单 */
+  triage(): Promise<Triage>
+  /** 移动书签；移动的记进「你定过位置的」 */
+  moveBookmarks(ids: string[], target: MoveTarget): Promise<ManualChange>
+  /** 删书签。给了 onBackup 就先把整棵树的快照（和应用前的备份同格式）交给它，它抛错就不删 */
+  removeBookmarks(ids: string[], onBackup?: (json: string) => void | Promise<void>): Promise<ManualChange>
+  /** 删空文件夹：深的先删，里面有东西的跳过 */
+  removeFolders(ids: string[]): Promise<ManualChange>
+  /** 撤销一次手动操作；中途出错再调一次从断点接着做 */
+  revertChange(change: ManualChange): Promise<{ restored: number; skipped: number }>
 }

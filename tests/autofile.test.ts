@@ -694,6 +694,20 @@ describe('bookmark-ux：角标的 N、待处理的 M', () => {
     expect(await t.store.getHandPlaced()).toContain(b.id)
   })
 
+  it('T11 收藏即整理、一键整理（直接放、预览、撤销这次）都不删书签', async () => {
+    const t = await setup({ tabs: ['https://x.com/a'], answer: (title) => (title.includes('拿不准') ? { path: 'AI 工具', confidence: 0.3 } : { path: 'AI 工具', confidence: 0.9 }) })
+    const removed: string[] = []
+    t.bm.beforeWrite((op, id) => void (op === 'remove' && removed.push(id)))
+    await t.save('拿不准', 'https://x.com/a')
+    await t.later()
+    const ids: string[] = []
+    for (let i = 0; i < 12; i++) ids.push((await t.bm.create({ parentId: '2', title: `第 ${i}`, url: `https://m.com/${i}` })).id)
+    const p = await t.filer.runButton()
+    await t.filer.applyBatch(p.id, ids.slice(0, 5))
+    await t.filer.undoBatch((await t.filer.status()).lastBatch!)
+    expect(removed).toEqual([])
+  })
+
   it('进待整理时记下 AI 猜的目录（在候选里的才记），待处理里预选它', async () => {
     const t = await setup({ tabs: ['https://x.com/a', 'https://x.com/b'], answer: (title) => (title.includes('乱猜') ? { path: '不存在的目录', confidence: 0.3 } : { path: '前端/CSS', confidence: 0.3 }) })
     const a = (await t.save('猜 CSS', 'https://x.com/a')).node

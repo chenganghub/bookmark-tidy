@@ -81,6 +81,7 @@ export interface Store extends ApplyStore {
   /** 你定过位置的：待处理的「放到」、卡片的「移动」、一键整理预览里没勾的、自动整理前你已经挪过的、一期方案里没勾的 */
   getHandPlaced(): Promise<string[]>
   addHandPlaced(ids: string[]): Promise<void>
+  removeHandPlaced(ids: string[]): Promise<void>
   getLastBatch(): Promise<string | undefined>
   setLastBatch(batchId: string): Promise<void>
   saveText(bookmarkId: string, t: SavedText): Promise<void>
@@ -184,6 +185,11 @@ export function createStore(kv: KV): Store {
       const cur = (await one<string[]>(K.handPlaced)) || []
       const next = [...cur.filter((x) => !ids.includes(x)), ...ids]
       await kv.set({ [K.handPlaced]: next.slice(-MAX_HAND_PLACED) })
+    },
+    async removeHandPlaced(ids) {
+      if (!ids.length) return
+      const cur = (await one<string[]>(K.handPlaced)) || []
+      await kv.set({ [K.handPlaced]: cur.filter((x) => !ids.includes(x)) })
     },
     getLastBatch: () => one<string>(K.lastBatch),
     async setLastBatch(batchId) {

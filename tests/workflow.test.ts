@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { EMPTY_USAGE } from '../src/core/ai'
 import { CLEANUP } from '../src/core/plan'
-import { treeFingerprint } from '../src/core/snapshot'
+import { parseBackup, treeFingerprint } from '../src/core/snapshot'
 import { memoryKV } from '../src/core/store'
 import type { ChatJsonFn, ChatMessage, PlanOptions } from '../src/core/types'
 import { createWorkflow } from '../src/core/workflow'
@@ -316,5 +316,136 @@ describe('二期：一期的操作和后台自动整理共用一把锁', () => {
     const report = await wf.restoreFromBackup(backup, () => {})
     expect(report.rebuilt).toHaveLength(1)
     expect(await createStore(kv).getOwn()).toEqual([...rebuilt, report.rebuilt[0].newId])
+  })
+})
+
+describe('bookmark-ux：待处理和手动操作', () => {
+  const T = 1_800_000_000_000
+
+  it('T3、K3 放到：移进去、记成你定过位置；撤销后回原处、移出「你定过」，自动整理的记录写回去', async () => {
+    const { wf, api, kv } = setup()
+    const store = createStore(kv)
+    const rec = { bookmarkId: 'o2', at: T - 1000, source: 'button' as const, from: { parentId: '2', index: 1, title: '其他 2' }, to: { parentId: '2', title: '其他 2' }, path: '待整理', confidence: 0.3, status: 'inbox' as const }
+    await store.saveRecord(rec, T)
+    await store.addHandPlaced(['o3'])
+    const change = await wf.moveBookmarks(['o1', 'o2', 'o3'], { folderId: 'FV' })
+    expect((await api.getChildren('FV')).map((c) => c.id).slice(-3)).toEqual(['o1', 'o2', 'o3'])
+    // o3 以前就记过，这次不算新记的
+    expect(change.placed).toEqual(['o1', 'o2'])
+    expect(Object.keys(change.records)).toEqual(['o2'])
+    expect((await store.getHandPlaced()).sort()).toEqual(['o1', 'o2', 'o3'])
+    // 后台收到这次移动会把记录改成「用户挪走」；撤销后写回原来的
+    await store.saveRecord({ ...rec, status: 'moved-by-user' }, T)
+    expect(await wf.revertChange(change)).toEqual({ restored: 3, skipped: 0 })
+    expect((await api.getChildren('2')).map((c) => c.id)).toEqual(['o1', 'o2', 'o3'])
+    expect(await store.getHandPlaced()).toEqual(['o3'])
+    expect((await store.getRecord('o2'))?.status).toBe('inbox')
+  })
+
+  it('T4 新建文件夹再放进去：同名的直接用；撤销「放到」不删新建的文件夹', async () => {
+    const { wf, api } = setup()
+    const first = await wf.moveBookmarks(['o1'], { newFolder: { parentId: '1', title: '杂项' } })
+    const made = (await api.get('o1'))[0].parentId!
+    expect((await api.get(made))[0].title).toBe('杂项')
+    await wf.moveBookmarks(['o2'], { newFolder: { parentId: '1', title: '杂项' } })
+    expect((await api.get('o2'))[0].parentId).toBe(made)
+    await wf.revertChange(first)
+    expect((await api.get('o1'))[0].parentId).toBe('2')
+    expect((await api.get(made))[0].title).toBe('杂项')
+  })
+
+  it('T6、T7 删除：先交出整棵树的备份（parseBackup 读得了）再删；备份这一步出错就不删；撤销后重建在原位置、记进 autoOwn、说明跟着走', async () => {
+    const { wf, api, kv } = setup()
+    const store = createStore(kv)
+    await wf.saveManualMeta('o2', { desc: '我写的说明' })
+    await expect(
+      wf.removeBookmarks(['o2'], () => {
+        throw new Error('下载不了')
+      })
+    ).rejects.toThrow('下载不了')
+    expect((await api.get('o2'))[0].title).toBe('其他 2')
+    let json = ''
+    const change = await wf.removeBookmarks(['o2', 'o3'], (j) => void (json = j))
+    expect(parseBackup(json).nodes.some((n) => n.id === 'o2' && n.url === 'https://other.com/2')).toBe(true)
+    expect((await api.getChildren('2')).map((c) => c.id)).toEqual(['o1'])
+    expect(await wf.revertChange(change)).toEqual({ restored: 2, skipped: 0 })
+    const kids = await api.getChildren('2')
+    expect(kids.map((c) => c.title)).toEqual(['其他', '其他 2', '其他 3'])
+    expect(kids[1].id).toBe(change.rebuilt.o2)
+    expect(await store.getOwn()).toEqual(expect.arrayContaining([change.rebuilt.o2, change.rebuilt.o3]))
+    expect((await wf.getMeta())[change.rebuilt.o2]).toMatchObject({ desc: '我写的说明', manual: true })
+  })
+
+  it('T8 删空文件夹：不管传进来的顺序，深的先删；有东西的跳过；撤销后回来', async () => {
+    const tree = treeOf([folder('旧', [folder('甲', [folder('乙', [], 'Y')], 'X')], 'OLD'), folder('有东西', [link('留着', 'https://keep.com', {}, 'K')], 'KEEP')])
+    const { wf, api } = setup({ tree })
+    const change = await wf.removeFolders(['OLD', 'KEEP', 'X', 'Y'])
+    expect(change.removed.map((r) => r.id)).toEqual(['Y', 'X', 'OLD'])
+    expect(change.skipped).toBe(1)
+    await wf.revertChange(change)
+    const old = (await api.getChildren('1')).find((c) => c.title === '旧')!
+    expect((await api.getChildren(old.id)).map((c) => c.title)).toEqual(['甲'])
+  })
+
+  it('T11 删除只在你点了以后发生：说明、方案、应用都不删；撤销、恢复只删这次应用新建、已经空了的目录', async () => {
+    const { wf, api } = setup({ granted: true })
+    const removed: string[] = []
+    api.beforeWrite((op, id) => void (op === 'remove' && removed.push(id)))
+    await wf.describe(() => {})
+    const log = await wf.apply((await wf.buildPlan(planOptions(), () => {})).plan, () => {})
+    expect(log.status).toBe('done')
+    expect(removed).toEqual([])
+    const json = await wf.exportSnapshot(log.snapshotId)
+    const undone = await wf.undo(log.applyId, () => {})
+    const created = new Set(Object.values(undone.createdFolders))
+    expect(removed.every((id) => created.has(id))).toBe(true)
+    const before = removed.length
+    await wf.restoreFromBackup(json, () => {})
+    expect(removed.slice(before).every((id) => created.has(id))).toBe(true)
+  })
+
+  it('T12 手动操作和一期的应用用同一把锁：应用没做完时，移动等着', async () => {
+    const lock = createMutationLock()
+    const { wf, api } = setup({ lock })
+    let release!: () => void
+    const held = lock.run('apply', () => new Promise<void>((r) => (release = r)))
+    const moving = wf.moveBookmarks(['o1'], { folderId: 'FV' })
+    await new Promise((r) => setTimeout(r, 20))
+    expect((await api.get('o1'))[0].parentId).toBe('2')
+    release()
+    await held
+    await moving
+    expect((await api.get('o1'))[0].parentId).toBe('FV')
+  })
+
+  it('O1 生成方案前先给没有说明的写说明（进度从「说明」开始，用量算在一起）；都有了就不再写', async () => {
+    const { wf, seen } = setup()
+    const stages: string[] = []
+    const { usage } = await wf.buildPlan(planOptions(), (p) => void (stages.at(-1) !== p.stage && stages.push(p.stage)))
+    expect(stages[0]).toBe('describe')
+    expect(seen[0].stage).toBe('describe')
+    expect(usage.requests).toBe(seen.length)
+    const n = seen.length
+    await wf.buildPlan(planOptions(), () => {})
+    expect(seen.slice(n).map((s) => s.stage)).not.toContain('describe')
+  })
+
+  it('K3 应用完成后，方案里没勾的记成你定过位置', async () => {
+    const { wf, kv } = setup()
+    const { plan } = await wf.buildPlan(planOptions(), () => {})
+    const edited = { ...plan, items: plan.items.map((i) => (i.bookmarkId === 'o3' ? { ...i, enabled: false } : i)) }
+    await wf.savePlan(edited)
+    expect((await wf.apply(edited, () => {})).status).toBe('done')
+    expect(await createStore(kv).getHandPlaced()).toEqual(['o3'])
+  })
+
+  it('T2、T5 待处理清单：应用后待整理、待清理里的都列出来', async () => {
+    const { wf } = setup()
+    const { plan } = await wf.buildPlan(planOptions(), () => {})
+    const edited = { ...plan, items: plan.items.map((i) => (i.bookmarkId === 'o3' ? { ...i, target: CLEANUP } : i.bookmarkId === 'o2' ? { ...i, target: 'inbox' } : i)) }
+    await wf.apply(edited, () => {})
+    const t = await wf.triage()
+    expect(t.unsure.map((e) => e.bookmark.id)).toEqual(['o2'])
+    expect(t.cleanup.map((e) => [e.bookmark.id, e.reason?.kind])).toEqual([['o3', 'other']])
   })
 })

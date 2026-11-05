@@ -1,19 +1,21 @@
 // 把各模块串成界面要的 Workflow。浏览器能力都能注入（测试全用假的）；不注入时才用 wxt/browser。
 // wxt/browser 在 node 里也能 import（browser 是 undefined），所以只在用到默认依赖时才取它的属性。
 import { browser } from 'wxt/browser'
-import { addUsage, createChatJson, estimateCostUsd, testConnection } from './ai'
+import { addUsage, createChatJson, EMPTY_USAGE, estimateCostUsd, testConnection } from './ai'
 import { alignToSnapshot, applyPlan, undoApply } from './apply'
 import { createFetchQueue, fetchPage, planFetch } from './fetcher'
+import { ensureFolder, moveBookmarks, removeBookmarks, removeFolders, revertChange } from './manual'
 import { buildPlan, effectiveLockedIds, oversizedLeaves, participants, splitFolder, splitTakenNames, validatePlan } from './plan'
 import { leafPaths } from './prompts'
 import { runClassify, runDescribe, runSplit, runTaxonomy } from './pipeline'
 import { audit, cleanTitle } from './rules'
 import { sanitizeText, sanitizeUrlForAi, truncate } from './sanitize'
-import { parseBackup, serializeSnapshot } from './snapshot'
+import { parseBackup, serializeSnapshot, takeSnapshot } from './snapshot'
 import { browserLocks, createMutationLock, type MutationLock } from './locks'
 import { chromeKV, createStore } from './store'
 import { descendantFolderIds, flattenTree, isUnderFolders, pickRoot } from './tree'
-import type { BookmarkMeta, BookmarksApi, ChatJsonFn, FlatTree, KV, PlanOptions, RootInfo, Settings, TaxonomyNode, Workflow } from './types'
+import { buildTriage } from './triage'
+import type { AiUsage, ApplyLog, BookmarkMeta, BookmarksApi, ChatJsonFn, FlatTree, KV, Plan, PlanOptions, RootInfo, Settings, StageProgress, TaxonomyNode, Workflow } from './types'
 
 const SITE_ORIGINS = ['http://*/*', 'https://*/*']
 
@@ -80,6 +82,42 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
 
   const emptyMeta = (): BookmarkMeta => ({ desc: '', title: '', tags: [], type: '其他', updatedAt: 0 })
 
+  /** 第一段：给书签栏、其他书签下（锁定的除外）还没有说明的写说明；都有了就不发请求、也不报进度 */
+  async function describeMissing(s: Settings, onProgress: (p: StageProgress) => void, signal?: AbortSignal): Promise<{ usage: AiUsage; failedIds: string[] }> {
+    const { flat } = await loadTree()
+    const { bar, other } = roots(flat)
+    const locked = descendantFolderIds(flat, lockedIds(flat, s))
+    const meta = await store.getMeta()
+    const pages = await store.getPageInfos()
+    const todo = flat.bookmarks.filter((b) => (b.rootId === bar.id || b.rootId === other.id) && !isUnderFolders(b, locked) && !meta[b.id])
+    if (!todo.length) return { usage: EMPTY_USAGE, failedIds: [] }
+    const inputs = todo.map((b) => ({
+      id: b.id,
+      title: sanitizeText(b.title),
+      url: sanitizeUrlForAi(b.url),
+      desc: truncate(sanitizeText(pages[b.url]?.description ?? ''), 200),
+      path: sanitizeText(b.path.join('/'))
+    }))
+    const r = await runDescribe(inputs, chatFor(s), {
+      onProgress,
+      signal,
+      onBatch: async (outs) => {
+        // 跑的过程中用户可能手改了某条：手改的不覆盖
+        const cur = await store.getMeta()
+        const entries: Record<string, BookmarkMeta> = {}
+        for (const o of outs) if (!cur[o.id]?.manual) entries[o.id] = { desc: o.desc, title: o.title, tags: o.tags, type: o.type, updatedAt: now() }
+        await store.saveMeta(entries)
+      }
+    })
+    return { usage: r.usage, failedIds: r.failedIds }
+  }
+
+  /** 应用完成后，方案里没勾的算你定了不动：记进「你定过位置的」，之后一键整理不再挪它 */
+  async function keepDisabled(plan: Plan, log: ApplyLog): Promise<ApplyLog> {
+    if (log.status === 'done') await store.addHandPlaced(plan.items.filter((i) => !i.enabled).map((i) => i.bookmarkId))
+    return log
+  }
+
   const workflow: Workflow = {
     loadTree,
 
@@ -141,36 +179,14 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
     async describe(onProgress, signal) {
       const s = await settings()
       requireKey(s)
-      const { flat } = await loadTree()
-      const { bar, other } = roots(flat)
-      const locked = descendantFolderIds(flat, lockedIds(flat, s))
-      const meta = await store.getMeta()
-      const pages = await store.getPageInfos()
-      const todo = flat.bookmarks.filter((b) => (b.rootId === bar.id || b.rootId === other.id) && !isUnderFolders(b, locked) && !meta[b.id])
-      const inputs = todo.map((b) => ({
-        id: b.id,
-        title: sanitizeText(b.title),
-        url: sanitizeUrlForAi(b.url),
-        desc: truncate(sanitizeText(pages[b.url]?.description ?? ''), 200),
-        path: sanitizeText(b.path.join('/'))
-      }))
-      const r = await runDescribe(inputs, chatFor(s), {
-        onProgress,
-        signal,
-        onBatch: async (outs) => {
-          // 跑的过程中用户可能手改了某条：手改的不覆盖
-          const cur = await store.getMeta()
-          const entries: Record<string, BookmarkMeta> = {}
-          for (const o of outs) if (!cur[o.id]?.manual) entries[o.id] = { desc: o.desc, title: o.title, tags: o.tags, type: o.type, updatedAt: now() }
-          await store.saveMeta(entries)
-        }
-      })
-      return { usage: r.usage, failedIds: r.failedIds }
+      return describeMissing(s, onProgress, signal)
     },
 
     async buildPlan(options: PlanOptions, onProgress, signal) {
       const s = await settings()
       requireKey(s)
+      // 整理页只有「生成方案」一个按钮：还没有说明的先写说明，再设计目录、归类
+      const pre = await describeMissing(s, onProgress, signal)
       const chat = chatFor(s)
       const { nodes, flat } = await loadTree()
       const { bar, other } = roots(flat)
@@ -228,7 +244,7 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
 
       // 第四段：超过 40 条的末级目录再拆细。最多两轮；拆不开的留着，预览里会提示条数超了
       let plan = built.plan
-      let usage = addUsage(tax.usage, cls.usage)
+      let usage = addUsage(pre.usage, addUsage(tax.usage, cls.usage))
       const splitIssues: string[] = []
       const inputOf = new Map(clsInput.map((x) => [x.id, x]))
       for (let round = 0; round < 2 && !signal?.aborted; round++) {
@@ -260,14 +276,14 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
     savePlan: (plan) => store.savePlan(plan),
 
     apply: (plan, onProgress, onSnapshot) =>
-      lock.run('apply', () => applyPlan(bookmarks, plan, store, { onProgress, onSnapshot: (snap) => onSnapshot?.(snap.id), now })),
+      lock.run('apply', async () => keepDisabled(plan, await applyPlan(bookmarks, plan, store, { onProgress, onSnapshot: (snap) => onSnapshot?.(snap.id), now }))),
 
     async continueApply(applyId, onProgress) {
       const log = await store.getLog(applyId)
       const plan = await store.getPlan()
       if (!log) throw new Error('找不到这次应用的记录')
       if (!plan || plan.id !== log.planId) throw new Error('找不到这次应用的方案')
-      return lock.run('apply', () => applyPlan(bookmarks, plan, store, { resume: log, onProgress, now }))
+      return lock.run('apply', async () => keepDisabled(plan, await applyPlan(bookmarks, plan, store, { resume: log, onProgress, now })))
     },
 
     async undo(applyId, onProgress) {
@@ -297,7 +313,67 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
       )
     },
 
-    estimateCost: (usage) => estimateCostUsd(usage, cachedSettings?.ai.model ?? 'deepseek-flash', true)
+    estimateCost: (usage) => estimateCostUsd(usage, cachedSettings?.ai.model ?? 'deepseek-flash', true),
+
+    // ---------------------------------------------------------------- bookmark-ux：待处理和手动操作
+
+    async triage() {
+      const { flat } = await loadTree()
+      const s = await settings()
+      return buildTriage({ flat, pages: await store.getPageInfos(), lockedIds: new Set(lockedIds(flat, s)), records: await store.getRecords(), plan: await store.getPlan() })
+    },
+
+    moveBookmarks: (ids, target) =>
+      lock.run('manual', async () => {
+        let folderId: string
+        if ('folderId' in target) folderId = target.folderId
+        else {
+          const { flat } = await loadTree()
+          const locked = descendantFolderIds(flat, lockedIds(flat, await settings()))
+          folderId = await ensureFolder(bookmarks, target.newFolder.parentId, target.newFolder.title, locked)
+        }
+        const records = await store.getRecords()
+        const before = new Set(await store.getHandPlaced())
+        const change = await moveBookmarks(bookmarks, ids, folderId, now())
+        const moved = change.moved.map((m) => m.id)
+        change.placed = moved.filter((id) => !before.has(id))
+        change.records = Object.fromEntries(moved.filter((id) => records[id]).map((id) => [id, records[id]]))
+        // 你亲手放的：之后不算进角标，自动整理也不再挪
+        await store.addHandPlaced(moved)
+        return change
+      }),
+
+    removeBookmarks: (ids, onBackup) =>
+      lock.run('manual', async () => {
+        // 备份交给界面下载（和应用前的备份同格式，不存进快照库，不挤掉一期撤销要用的那几份）；这一步抛错就不删
+        if (onBackup) await onBackup(serializeSnapshot(await takeSnapshot(bookmarks, now())))
+        return removeBookmarks(bookmarks, ids, now())
+      }),
+
+    removeFolders: (ids) =>
+      lock.run('manual', async () => {
+        const { flat } = await loadTree()
+        const depth = new Map(flat.folders.map((f) => [f.id, f.depth]))
+        // 深的先删：子文件夹删完，父文件夹才是空的（已经不在的排到最后，删的时候记成跳过）
+        const ordered = [...ids].sort((a, b) => (depth.get(b) ?? 0) - (depth.get(a) ?? 0))
+        return removeFolders(bookmarks, ordered, now())
+      }),
+
+    revertChange: (change) =>
+      lock.run('manual', async () => {
+        const r = await revertChange(bookmarks, change, async (oldId, newId, isBookmark) => {
+          if (!isBookmark) return
+          // 重建的书签：自动整理不当它是新收藏；说明跟着搬到新 id 上
+          await store.addOwn([newId])
+          const m = (await store.getMeta())[oldId]
+          if (m) await store.saveMeta({ [newId]: m })
+        })
+        // 移回去了的：不再算你定过位置，自动整理的记录也还原
+        const back = new Set(r.movedBack)
+        await store.removeHandPlaced(change.placed.filter((id) => back.has(id)))
+        for (const rec of Object.values(change.records)) if (back.has(rec.bookmarkId)) await store.saveRecord(rec, now())
+        return { restored: r.restored, skipped: r.skipped }
+      })
   }
 
   void settings().catch(() => {})
