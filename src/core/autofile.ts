@@ -202,9 +202,11 @@ export function createAutoFiler(deps: AutoFilerDeps) {
       if (page && !sameUrl(page.url, input.url)) page = undefined
     }
     // 和一期抓取同样的跳过规则：像操作链接（退订、验证、退出登录…）、带凭证参数、带长随机串的，
-    // 以及用户在一期里按域名排除的，都不去请求（不带 Cookie 的 GET 也可能触发退订之类的操作）
+    // 以及用户在体检页的抓取清单里按域名、按文件夹取消勾选的，都不去请求（不带 Cookie 的 GET 也可能触发退订之类的操作）
     const host = hostOf(input.url)
-    const excluded = !!host && matchesDomain(host, s.excludeDomains)
+    const self = flat.bookmarks.find((x) => x.id === input.id)
+    const inExcludedFolder = !!self && isUnderFolders(self, new Set(s.excludeFolderIds))
+    const excluded = (!!host && matchesDomain(host, s.excludeDomains)) || inExcludedFolder
     const mayFetch = !isPrivate && !excluded && !skipReasonOf(input.url)
     // 简介只用不带 Cookie 抓到的（和一期一样）：标签页里读到的可能是登录后的版本，不发
     let desc = ''
@@ -518,12 +520,19 @@ export function createAutoFiler(deps: AutoFilerDeps) {
    */
   function liveBatch(initial: BatchState) {
     let cur = initial
-    const timer = setInterval(() => void saveBatch(cur).catch(() => {}), deps.heartbeatMs ?? HEARTBEAT_MS)
+    // 写入排队，每次轮到时写当时最新的状态：心跳不会把旧状态盖在新状态上面
+    let chain: Promise<unknown> = Promise.resolve()
+    const write = () => {
+      const run = chain.then(() => saveBatch(cur))
+      chain = run.catch(() => {})
+      return run
+    }
+    const timer = setInterval(() => void write().catch(() => {}), deps.heartbeatMs ?? HEARTBEAT_MS)
     return {
       get: () => cur,
       async set(next: BatchState): Promise<BatchState> {
         cur = next
-        await saveBatch(next)
+        await write()
         return next
       },
       stop: () => clearInterval(timer)
@@ -535,6 +544,8 @@ export function createAutoFiler(deps: AutoFilerDeps) {
     let filed = 0
     let toInbox = 0
     let skipped = 0
+    // 一条要放的都没有（AI 都没给出能用的结果）：不占「最近一批」，上一批照样能「撤销这次」
+    if (!items.length) return { filed, toInbox, skipped }
     // 先记下这是最近一批：后面哪一步出错，已经放好的也能「撤销这次」
     await store.setLastBatch(batchId)
     await deps.lock.run('button', async () => {
@@ -669,7 +680,9 @@ export function createAutoFiler(deps: AutoFilerDeps) {
     } catch (e) {
       // 存储写不进去之类：记成失败，弹窗里看得到原因，不会一直挂着「整理中」
       await dropPending(batchId).catch(() => {})
-      const failed: BatchState = { id: batchId, phase: 'failed', total: 0, done: 0, startedAt: now(), error: e instanceof Error ? e.message : String(e) }
+      // 保留这批的条数、进度和开始时间（和 runButtonOnce 的失败一样），只换阶段和原因
+      const base: BatchState = live?.get() ?? { id: batchId, phase: 'running', total: 0, done: 0, startedAt: now() }
+      const failed: BatchState = { ...base, phase: 'failed', items: undefined, error: e instanceof Error ? e.message : String(e) }
       await (live ? live.set(failed) : saveBatch(failed)).catch(() => {})
       return failed
     } finally {

@@ -47,6 +47,25 @@ describe('站点', () => {
     expect(isPrivateUrl('http://192.168.1.2/x', list)).toBe(true)
     expect(isPrivateUrl('http://10.0.0.5/', list)).toBe(true)
     expect(isPrivateUrl('http://127.0.0.1:8080/', list)).toBe(true)
+    // 172.16～31、IPv6 本机和内网、0.0.0.0、链路本地、组网（Tailscale 之类）、*.localhost、home.arpa
+    expect(isPrivateUrl('http://172.16.0.1/', list)).toBe(true)
+    expect(isPrivateUrl('http://172.31.255.1/', list)).toBe(true)
+    expect(isPrivateUrl('http://[::1]:3000/', list)).toBe(true)
+    expect(isPrivateUrl('http://[fe80::1]/', list)).toBe(true)
+    expect(isPrivateUrl('http://[::ffff:192.168.1.1]/', list)).toBe(true)
+    expect(isPrivateUrl('http://0.0.0.0:8080/', list)).toBe(true)
+    expect(isPrivateUrl('http://169.254.10.20/', list)).toBe(true)
+    expect(isPrivateUrl('http://100.101.102.103/', list)).toBe(true)
+    expect(isPrivateUrl('http://app.localhost:5173/', list)).toBe(true)
+    expect(isPrivateUrl('http://nas.home.arpa/', list)).toBe(true)
+    // 主机名末尾带点的写法和不带点的一样
+    expect(isPrivateUrl('http://nas.local./', list)).toBe(true)
+    expect(isPrivateUrl('http://169.254.169.254./latest/', list)).toBe(true)
+    expect(isPrivateUrl('https://abc.feishu.cn./docx/1', list)).toBe(true)
+    // 边界外的公网地址不算
+    expect(isPrivateUrl('http://172.32.0.1/', list)).toBe(false)
+    expect(isPrivateUrl('http://100.128.0.1/', list)).toBe(false)
+    expect(isPrivateUrl('http://8.8.8.8/', list)).toBe(false)
   })
 
   it('正文片段只给白名单里、并且不私有的', () => {

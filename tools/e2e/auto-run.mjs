@@ -206,10 +206,16 @@ try {
   record('A7', (await parentOf(b.locked)) === ids.lock && lockedReq === 0 && !lockName, `收藏进锁定文件夹的：不动、没发请求（${lockedReq} 次）；任何请求里有「受保护资料」：${lockName}`)
 
   const notices = await send('e2e:notices')
+  // 后台记下的通知原文（e2e 构建才有）：标题、正文、旧位置、按钮
+  const noticeLog = await send('e2e:notice-log')
+  const noticeOf = (id) => noticeLog.filter((n) => n.id === `bt:${id}`).at(-1)
+  const otherTitle = (await node(ids.other))?.title ?? ''
   const dup1Parent = await parentOf(b.dup1)
   const dup2Parent = await parentOf(b.dup2)
-  record('A6', dup1Parent === ids.other && dup2Parent === ids.vue && requestFor(b.dup1).length === 0,
-    `8 秒内同一网页收藏两次：第一次留在原处 ${dup1Parent === ids.other}，第二次处理了 ${dup2Parent === ids.vue}；第一次没发请求`)
+  const dupNotice = noticeOf(b.dup2)
+  const wantDup = `以前收藏过，在「${otherTitle}」`
+  record('A6', dup1Parent === ids.other && dup2Parent === ids.vue && requestFor(b.dup1).length === 0 && dupNotice?.context === wantDup,
+    `8 秒内同一网页收藏两次：第一次留在原处 ${dup1Parent === ids.other}，第二次处理了 ${dup2Parent === ids.vue}；第一次没发请求；第二次的通知里写「${dupNotice?.context ?? '（没有）'}」（旧的那条在「${otherTitle}」根下）`)
 
   const unsureParent = await parentOf(b.unsure)
   const inbox = await ev(`chrome.bookmarks.getChildren(${JSON.stringify(ids.other)}).then((c) => c.find((x) => x.title === '待整理' && !x.url)?.id ?? null)`)
@@ -242,8 +248,10 @@ try {
   await sleep(500)
   const undone = await node(b.pub)
   const afterNotices = await send('e2e:notices')
-  record('A5', nPub && undone.parentId === ids.other && undone.title === 'Vue 响应式原理1-CSDN博客' && (await local(`autorec:${b.pub}`))?.status === 'undone' && afterNotices[`bt:${b.pub}`] === undefined && bmTab,
-    `通知有：${nPub}（标题「已放进「前端/Vue」」）；点「撤销」后回到原处 ${undone.parentId === ids.other}、标题改回「${undone.title}」；通知关掉；点「改位置」打开了 chrome://bookmarks 里它所在的文件夹：${bmTab}；撤销前在 ${before.parentId === ids.vue ? '前端/Vue' : before.parentId}`)
+  const pubNotice = noticeOf(b.pub)
+  const noticeOk = pubNotice?.title === '已放进「前端/Vue」' && !!pubMeta?.desc && pubNotice?.message === pubMeta.desc && pubNotice?.buttons.join() === '撤销,改位置'
+  record('A5', nPub && noticeOk && undone.parentId === ids.other && undone.title === 'Vue 响应式原理1-CSDN博客' && (await local(`autorec:${b.pub}`))?.status === 'undone' && afterNotices[`bt:${b.pub}`] === undefined && bmTab,
+    `通知有：${nPub}；标题「${pubNotice?.title}」，正文「${pubNotice?.message}」= 存下的说明：${pubNotice?.message === pubMeta?.desc}，按钮「${pubNotice?.buttons.join('」「')}」；点「撤销」后回到原处 ${undone.parentId === ids.other}、标题改回「${undone.title}」；通知关掉；点「改位置」打开了 chrome://bookmarks 里它所在的文件夹：${bmTab}；撤销前在 ${before.parentId === ids.vue ? '前端/Vue' : before.parentId}`)
 
   // ---------------------------------------------------------------- 第 2 轮：A4 一期操作进行中收藏的、重建的
   // 和真的一样：一期的操作在管理页里拿着同一把锁；应用、撤销进行中，最近一次应用的状态是 running / undoing；从备份恢复不改状态

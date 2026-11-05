@@ -13,6 +13,8 @@ import type { BookmarkNode, BookmarksApi } from '../src/core/types'
 const SITE_ORIGINS = ['http://*/*', 'https://*/*']
 const ALARM = 'bt-auto'
 const NOTICE_PREFIX = 'bt:'
+/** 「撤销没成」这类说明用的通知：前缀和 NOTICE_PREFIX 不同，点它不会当成「撤销」「改位置」 */
+const ERROR_PREFIX = 'bt-err:'
 
 const escapeXml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 
@@ -23,6 +25,8 @@ export default defineBackground(() => {
   const lock = createMutationLock({ locks: browserLocks(), session })
   const bookmarks = browser.bookmarks as unknown as BookmarksApi
   let timer: ReturnType<typeof setTimeout> | undefined
+  /** 只在 e2e 构建里记：发过的通知（端到端测试核对标题、正文、按钮） */
+  const noticeLog: { id: string; title: string; message: string; context: string; buttons: string[] }[] = []
 
   const filer = createAutoFiler({
     bookmarks,
@@ -40,15 +44,19 @@ export default defineBackground(() => {
     },
     hasSitePermission: () => browser.permissions.contains({ origins: SITE_ORIGINS }),
     async notify(n) {
-      await browser.notifications.create(`${NOTICE_PREFIX}${n.bookmarkId}`, {
-        type: 'basic',
+      const id = `${NOTICE_PREFIX}${n.bookmarkId}`
+      const options = {
+        type: 'basic' as const,
         iconUrl: browser.runtime.getURL('/icon/128.png'),
         title: n.title,
         message: n.message,
         ...(n.context ? { contextMessage: n.context } : {}),
         buttons: [{ title: '撤销' }, { title: '改位置' }],
         priority: 0
-      })
+      }
+      await browser.notifications.create(id, options)
+      // e2e 构建：记下发过的通知（chrome.notifications.getAll 只给 id，看不到标题和正文）
+      if (import.meta.env.MODE === 'e2e') noticeLog.push({ id, title: options.title, message: options.message, context: n.context ?? '', buttons: options.buttons.map((b) => b.title) })
     },
     schedule(ms) {
       clearTimeout(timer)
@@ -121,6 +129,15 @@ export default defineBackground(() => {
     try {
       if (button === 0) await filer.undo(id)
       else await openFolderOf(id)
+    } catch (e) {
+      // 撤销没成（锁拿不到、书签刚被删之类）：另弹一条写原因，弹窗「最近收藏」里还能再点「撤销」。
+      // 这条用另一个前缀，点它不会再走到这里
+      if (button === 0) {
+        await browser.notifications
+          .create(`${ERROR_PREFIX}${id}`, { type: 'basic', iconUrl: browser.runtime.getURL('/icon/128.png'), title: '撤销没成', message: e instanceof Error ? e.message : String(e), priority: 0 })
+          .catch(() => '')
+      }
+      throw e
     } finally {
       // 撤销或打开失败（书签刚被删之类）也把通知收掉，不留一个点了没反应的通知
       await browser.notifications.clear(nid).catch(() => false)
@@ -172,8 +189,19 @@ export default defineBackground(() => {
         return background(filer.applyBatch(m.batchId ?? '', m.ids ?? []))
       case 'auto:cancel-batch':
         return reply(filer.cancelBatch(m.batchId ?? ''))
-      case 'auto:undo':
-        return reply(filer.undo(m.bookmarkId ?? '').finally(badgeSoon))
+      case 'auto:undo': {
+        // 在弹窗「最近收藏」里撤销成功：这条的通知和之前的「撤销没成」都收掉，不留过时的
+        const id = m.bookmarkId ?? ''
+        return reply(
+          filer
+            .undo(id)
+            .then(async (ok) => {
+              if (ok) await Promise.all([browser.notifications.clear(`${NOTICE_PREFIX}${id}`), browser.notifications.clear(`${ERROR_PREFIX}${id}`)]).catch(() => [])
+              return ok
+            })
+            .finally(badgeSoon)
+        )
+      }
       case 'auto:undo-batch':
         return reply(filer.undoBatch(m.batchId ?? '').finally(badgeSoon))
     }
@@ -190,6 +218,8 @@ export default defineBackground(() => {
           return reply(onNoticeButton(m.nid ?? '', m.button ?? 0))
         case 'e2e:notices':
           return reply(browser.notifications.getAll())
+        case 'e2e:notice-log':
+          return reply(Promise.resolve(noticeLog))
         case 'e2e:badge':
           return reply(updateBadge().then(() => browser.action.getBadgeText({})))
       }

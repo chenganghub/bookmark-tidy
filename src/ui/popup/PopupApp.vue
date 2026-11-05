@@ -46,6 +46,8 @@ async function runSearch(q: string) {
   if (!q.trim() || !client.value) {
     results.value = []
     resultsFor = q
+    // 上一次的错误不留着；后台接口没连上（getClient 出错）时写那个原因
+    searchError.value = q.trim() && !client.value ? error.value : ''
     return
   }
   let r: SearchEntry[] = []
@@ -140,14 +142,23 @@ function toggle(id: string, on: boolean) {
   else next.delete(id)
   picked.value = next
 }
+let entering = false
 async function onEnter() {
-  const q = query.value
-  // 刚改了词、列表里还是上一个词的结果：先按现在的词搜完再打开，不打开旧结果
-  if (resultsFor !== q) await runSearch(q)
-  if (query.value !== q) return
-  const first = results.value[0]
-  if (first) client.value?.open(first.url)
-  else if (q.trim()) client.value?.openManager(undefined, q.trim())
+  // 连按两下回车只处理一次
+  if (entering) return
+  entering = true
+  try {
+    const q = query.value
+    // 刚改了词、或者上次搜出错了：按现在的词再搜一次，不打开上一个词的结果
+    if (resultsFor !== q || searchError.value) await runSearch(q)
+    if (query.value !== q || resultsFor !== q) return
+    const first = results.value[0]
+    if (first) client.value?.open(first.url)
+    // 没搜到（或者还是出错）：带着这个词去管理页搜
+    else if (q.trim()) client.value?.openManager(undefined, q.trim())
+  } finally {
+    entering = false
+  }
 }
 
 const resultLine = computed(() => {
@@ -211,9 +222,10 @@ const statusText: Record<string, string> = { undone: '已撤销', 'moved-by-user
             <button class="btn btn-primary" type="button" :disabled="busy || !picked.size || submitted === batch.id" @click="apply">放好 {{ picked.size }} 条</button>
           </div>
         </template>
-        <div v-else-if="batch?.phase === 'done' && status.lastBatch === batch.id" class="pop-gate">
+        <div v-else-if="batch?.phase === 'done'" class="pop-gate">
           <span>{{ resultLine }}</span>
-          <button class="link" type="button" :disabled="busy" @click="undoBatch">撤销这次</button>
+          <!-- 一条都没放（AI 没给出能用的结果）时这批不占「最近一批」，只显示结果、没有「撤销这次」 -->
+          <button v-if="status.lastBatch === batch.id" class="link" type="button" :disabled="busy" @click="undoBatch">撤销这次</button>
         </div>
         <div v-else-if="batch?.phase === 'failed'" class="pop-gate">
           <span class="secondary">{{ batch.error }}</span>

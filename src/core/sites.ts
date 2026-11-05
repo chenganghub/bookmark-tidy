@@ -8,8 +8,15 @@ export const DEFAULT_TEXT_DOMAINS = ['blog.csdn.net', 'cnblogs.com', 'juejin.cn'
 /** 默认私有站点：公司协作平台。内网、本机、锁定文件夹里出现过的站点另外算 */
 export const DEFAULT_PRIVATE_DOMAINS = ['feishu.cn', 'feishu.net', 'larksuite.com', 'larkoffice.com', 'dingtalk.com']
 
-/** 主机名像内网的后缀 */
-const INTERNAL_SUFFIX = /\.(local|lan|internal|intranet|corp|home)$/i
+/** 主机名像内网、本机的后缀（*.localhost 指本机，home.arpa 是家庭网络的保留域名） */
+const INTERNAL_SUFFIX = /\.(local|lan|internal|intranet|corp|home|localhost|home\.arpa)$/i
+
+/**
+ * 一期 `isIntranet`（rules.ts）没管的内网、本机 IPv4：0.0.0.0、链路本地 169.254/16、
+ * 组网常用的 100.64/10（Tailscale 之类）。127、10、192.168、172.16～31 由 `isIntranet` 判；
+ * IPv6 字面量（[::1] 之类）没有点，由下面「没有点」那条判成私有。
+ */
+const MORE_LOCAL_IPV4 = /^(0\.0\.0\.0|169\.254\.\d+\.\d+|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+)$/
 
 /** 常见的二级公共后缀：取主域名时要多带一段 */
 const SECOND_LEVEL = new Set(['com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn', 'ac.cn', 'com.hk', 'com.tw', 'co.uk', 'co.jp', 'com.au', 'co.kr'])
@@ -60,8 +67,9 @@ export function privateSites(lockedUrls: string[], configured: string[]): string
 /** 不读正文、请求里只给标题和域名：非 http(s)、内网和本机、像内网的主机名、私有站点 */
 export function isPrivateUrl(url: string, privateList: string[]): boolean {
   if (!isHttp(url) || isIntranet(url)) return true
-  const host = hostOf(url)
-  if (!host || INTERNAL_SUFFIX.test(host) || !host.includes('.')) return true
+  // 主机名末尾的点（nas.local.）和不带点的是同一个地址，先去掉再比
+  const host = hostOf(url).replace(/\.+$/, '')
+  if (!host || INTERNAL_SUFFIX.test(host) || MORE_LOCAL_IPV4.test(host) || !host.includes('.')) return true
   return matchesDomain(host, privateList)
 }
 

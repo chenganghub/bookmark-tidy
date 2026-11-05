@@ -370,15 +370,15 @@ describe('收藏即整理：正文和隐私', () => {
     expect(await t.store.getText(a.id)).toBeUndefined()
   })
 
-  it('和一期抓取同样的跳过规则：退订、验证这类操作链接，带凭证参数的，一期里按域名排除的，都不去请求', async () => {
-    const urls = ['https://mail.example.com/unsubscribe?u=1', 'https://example.com/verify-email/abc', 'https://example.com/p?token=x', 'https://skip.example.org/a']
+  it('和一期抓取同样的跳过规则：退订、验证这类操作链接，带凭证参数的，一期里按域名、按文件夹排除的，都不去请求', async () => {
+    const urls = ['https://mail.example.com/unsubscribe?u=1', 'https://example.com/verify-email/abc', 'https://example.com/p?token=x', 'https://skip.example.org/a', 'https://normal.example.net/a']
     const t = await setup({ tabs: urls })
-    await t.store.saveSettings({ excludeDomains: ['example.org'] })
-    for (const [i, u] of urls.entries()) await t.save(`第 ${i} 条`, u)
+    await t.store.saveSettings({ excludeDomains: ['example.org'], excludeFolderIds: ['FC'] })
+    for (const [i, u] of urls.entries()) await t.save(`第 ${i} 条`, u, i === 4 ? 'FC' : '2')
     await t.later()
     expect(t.fetched).toEqual([])
     // 照样问 AI（只有标题和去掉参数的网址），照样放好
-    expect(t.prompts).toHaveLength(4)
+    expect(t.prompts).toHaveLength(5)
     expect(t.prompts.map((p) => p[1].content).join('\n')).not.toContain('token=x')
   })
 
@@ -579,10 +579,36 @@ describe('一键整理', () => {
       return set(items)
     }
     const r = await t.filer.applyBatch(p.id, ids.slice(0, 3))
-    expect(r).toMatchObject({ phase: 'failed', error: '存储写不进去' })
+    // 失败也保留这批的条数和开始时间
+    expect(r).toMatchObject({ phase: 'failed', error: '存储写不进去', total: 3, startedAt: p.startedAt })
     expect((await t.filer.status()).batch).toMatchObject({ id: p.id, phase: 'failed', error: '存储写不进去' })
     for (const id of ids) expect(await t.parentOf(id)).toBe('2')
     expect((await t.session.get('auto:pending'))['auto:pending']).toBeUndefined()
+  })
+
+  it('AI 一条能用的结果都没给（缺说明）：不占「最近一批」，上一批照样能「撤销这次」', async () => {
+    const t = await setup({ answer: () => ({ path: 'AI 工具', confidence: 0.9 }) })
+    const first = (await t.bm.create({ parentId: '2', title: '第一批', url: 'https://m.com/1' })).id
+    await t.filer.runButton()
+    const lastBefore = (await t.filer.status()).lastBatch
+    expect(lastBefore).toBeDefined()
+    // 第二批换一个 AI：回的 JSON 里没有这条的说明，parseFile 给 undefined，也不算 aiFailed
+    const noDesc = createAutoFiler({
+      bookmarks: t.bm,
+      kv: t.kv,
+      session: t.session,
+      lock: t.lock,
+      tabs: { query: async () => [] },
+      hasSitePermission: async () => true,
+      fetchImpl: (async () => new Response('', { status: 404, headers: { 'content-type': 'text/html' } })) as unknown as typeof fetch,
+      chat: async () => ({ data: { items: [{ id: 'x', path: 'AI 工具', confidence: 0.9 }] }, usage: { requests: 1, promptTokens: 1, completionTokens: 1, cacheHitTokens: 0, cacheMissTokens: 1 } }),
+      now: () => T0 + 1000
+    })
+    await t.bm.create({ parentId: '2', title: '第二批', url: 'https://m.com/2' })
+    expect(await noDesc.runButton()).toMatchObject({ phase: 'done', result: { filed: 0, toInbox: 0, skipped: 1 } })
+    expect((await noDesc.status()).lastBatch).toBe(lastBefore)
+    expect(await noDesc.undoBatch(lastBefore!)).toBe(1)
+    expect(await t.parentOf(first)).toBe('2')
   })
 
   it('没整理过时没有要整理的', async () => {
