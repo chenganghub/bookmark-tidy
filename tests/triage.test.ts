@@ -95,15 +95,28 @@ describe('待处理', () => {
     })
   })
 
+  it('T5 失效也认 410；重复的另一条后来没了，就变成「其他」', () => {
+    const p410: Record<string, PageInfo> = { 'https://gone410.com/': { url: 'https://gone410.com/', status: 'dead', httpStatus: 410, fetchedAt: 1 } }
+    const withOther = (keepOutside: boolean) =>
+      treeOf(keepOutside ? [folder('前端', [link('外面那条', 'https://dup.com/x', {}, 'out')], 'FE')] : [folder('前端', [], 'FE')], [
+        folder('待清理', [link('410 的', 'https://gone410.com/', {}, 'g410'), link('重复的', 'https://dup.com/x', {}, 'dup')], 'FCL')
+      ])
+    const reasons = (keep: boolean) => Object.fromEntries(buildTriage({ flat: flattenTree(withOther(keep)), pages: p410, lockedIds: new Set(), records: {} }).cleanup.map((e) => [e.bookmark.id, e.reason]))
+    expect(reasons(true)).toEqual({ g410: { kind: 'dead', httpStatus: 410 }, dup: { kind: 'duplicate', otherPath: '前端' } })
+    expect(reasons(false).dup).toEqual({ kind: 'other' })
+  })
+
   it('T6 批量删只删原因还成立的', () => {
     expect(batchRemovable(triage().cleanup).map((e) => e.bookmark.id)).toEqual(['k1', 'k2', 'k5'])
   })
 
-  it('T8 空文件夹：整棵子树没有书签的，按最上层分组、组里深的在前；不含锁定的和还有书签的', () => {
-    expect(triage().empty.map((g) => [g.folder.id, g.ids])).toEqual([
+  it('T8 空文件夹：整棵子树没有书签的，按最上层分组、组里深的在前；不含锁定的和还有书签的；不含三个根（移动设备书签这个根是空的也不算）', () => {
+    const t = triage()
+    expect(t.empty.map((g) => [g.folder.id, g.ids])).toEqual([
       ['FNEW', ['FNEW']],
       ['OLD1', ['OLD2', 'OLD1']]
     ])
+    expect(t.empty.flatMap((g) => g.ids).some((id) => ['0', '1', '2', '3'].includes(id))).toBe(false)
   })
 
   it('待处理 M：待整理、整理前的空文件夹、待清理里的书签数（空文件夹不算）', () => {

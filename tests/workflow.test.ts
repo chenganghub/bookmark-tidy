@@ -387,7 +387,7 @@ describe('bookmark-ux：待处理和手动操作', () => {
     expect((await api.getChildren(old.id)).map((c) => c.title)).toEqual(['甲'])
   })
 
-  it('T11 删除只在你点了以后发生：说明、方案、应用都不删；撤销、恢复只删这次应用新建、已经空了的目录', async () => {
+  it('T11 删除只在你点了以后发生：说明、方案、应用、从备份恢复都不删；撤销只删这次应用新建、已经空了的目录', async () => {
     const { wf, api } = setup({ granted: true })
     const removed: string[] = []
     api.beforeWrite((op, id) => void (op === 'remove' && removed.push(id)))
@@ -397,11 +397,13 @@ describe('bookmark-ux：待处理和手动操作', () => {
     expect(removed).toEqual([])
     const json = await wf.exportSnapshot(log.snapshotId)
     const undone = await wf.undo(log.applyId, () => {})
+    // 撤销删的都是这次应用新建的目录；假接口和 Chrome 一样删不了非空文件夹（删了就是空的）
     const created = new Set(Object.values(undone.createdFolders))
+    expect(removed.length).toBeGreaterThan(0)
     expect(removed.every((id) => created.has(id))).toBe(true)
     const before = removed.length
     await wf.restoreFromBackup(json, () => {})
-    expect(removed.slice(before).every((id) => created.has(id))).toBe(true)
+    expect(removed.slice(before)).toEqual([])
   })
 
   it('T12 手动操作和一期的应用用同一把锁：应用没做完时，移动等着', async () => {
@@ -416,6 +418,32 @@ describe('bookmark-ux：待处理和手动操作', () => {
     await held
     await moving
     expect((await api.get('o1'))[0].parentId).toBe('FV')
+  })
+
+  it('T12 删除、撤销也在同一把锁里：自动整理、一键整理拿着锁时等着', async () => {
+    const lock = createMutationLock()
+    const { wf, api } = setup({ lock })
+    const hold = (op: 'auto' | 'button') => {
+      let release!: () => void
+      const held = lock.run(op, () => new Promise<void>((r) => (release = r)))
+      return { held, release: () => release() }
+    }
+    const a = hold('auto')
+    const removing = wf.removeBookmarks(['o1'])
+    await new Promise((r) => setTimeout(r, 20))
+    expect((await api.getChildren('2')).map((c) => c.id)).toContain('o1')
+    a.release()
+    await a.held
+    const change = await removing
+    expect((await api.getChildren('2')).map((c) => c.id)).not.toContain('o1')
+    const b = hold('button')
+    const reverting = wf.revertChange(change)
+    await new Promise((r) => setTimeout(r, 20))
+    expect((await api.getChildren('2')).map((c) => c.title)).not.toContain('其他')
+    b.release()
+    await b.held
+    await reverting
+    expect((await api.getChildren('2')).map((c) => c.title)).toContain('其他')
   })
 
   it('O1 生成方案前先给没有说明的写说明（进度从「说明」开始，用量算在一起）；都有了就不再写', async () => {

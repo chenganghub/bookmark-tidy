@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createAutoFiler, type AutoNotice, type PageRead } from '../src/core/autofile'
+import { createWorkflow } from '../src/core/workflow'
 import { createMutationLock } from '../src/core/locks'
 import { createFakeBookmarks, folder, link, treeOf } from '../src/core/memory-bookmarks'
 import { createStore, memoryKV } from '../src/core/store'
@@ -707,6 +708,24 @@ describe('bookmark-ux：角标的 N、待处理的 M', () => {
     expect(t.prompts.filter((p) => p[1].content.split('\n')[1].startsWith(`${a.id} |`))).toHaveLength(0)
     expect(await t.parentOf(b.id)).toBe('FC')
     expect(await t.store.getHandPlaced()).toContain(b.id)
+  })
+
+  it('T7 待处理里删了又撤销：重建出来的不进收藏即整理的队列（网址开在标签页里也不），不当新收藏算', async () => {
+    const t = await setup({ tabs: ['https://x.com/a', 'https://x.com/b'] })
+    const wf = createWorkflow({ bookmarks: t.bm, kv: t.kv, lock: t.lock, now: () => T0, permissions: { contains: async () => true, request: async () => true }, bookmarkEvents: { subscribe: () => () => {} } })
+    const a = await t.bm.create({ parentId: 'FV', title: '会被删的', url: 'https://x.com/a' })
+    const control = await t.bm.create({ parentId: 'FV', title: '对照：普通的新书签', url: 'https://x.com/b' })
+    expect(await t.filer.onCreated(control.id, control)).toBe(true)
+    const change = await wf.removeBookmarks([a.id])
+    await wf.revertChange(change)
+    const newId = change.rebuilt[a.id]
+    const [rebuilt] = await t.bm.get(newId)
+    expect(rebuilt).toMatchObject({ parentId: 'FV', title: '会被删的', url: 'https://x.com/a' })
+    // 浏览器对重建出来的书签照样发 onCreated：不排队
+    expect(await t.filer.onCreated(newId, rebuilt)).toBe(false)
+    expect(await t.store.getOwn()).toContain(newId)
+    const queue = ((await t.session.get('auto:queue'))['auto:queue'] as { bookmarkId: string }[]).map((j) => j.bookmarkId)
+    expect(queue).toEqual([control.id])
   })
 
   it('T11 收藏即整理、一键整理（直接放、预览、撤销这次）都不删书签', async () => {
