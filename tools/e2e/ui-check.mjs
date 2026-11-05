@@ -343,6 +343,28 @@ try {
   await page.evaluate(`window.__bt.state.notice = null`)
   await page.evaluate(`${button('卡片')}.click()`)
 
+  // M1 卡片「移动」里选「新建文件夹…」：填名称（放在书签栏下），建好后放进去；撤销回原处，新建的文件夹留着（和 T4 一样）。
+  // 放在列表行的比较之后：多出来的文件夹会改变「放到」的选项
+  await page.waitFor('document.querySelector(".grid .card-wrap")')
+  const nfId = await page.evaluate(`(() => { const t = document.querySelector('.grid .card-wrap .card').getAttribute('title'); return window.__bt.state.flat.bookmarks.find((b) => b.title === t).id })()`)
+  const nfFrom = await parentOfCard(nfId)
+  await page.evaluate(`document.querySelector('.grid .card-wrap .card-ops [aria-label="移动"]').click()`)
+  await page.waitFor('document.querySelector("dialog[open] select")')
+  await sleep(200)
+  await page.evaluate(`(() => { const s = document.querySelector('dialog[open] select'); s.value = '__new'; s.dispatchEvent(new Event('change')); return true })()`)
+  await page.waitFor('document.querySelector("dialog[open] input[type=text]")')
+  await page.evaluate(`(() => { const i = document.querySelector('dialog[open] input[type=text]'); i.value = '卡片上新建的'; i.dispatchEvent(new Event('input')); return true })()`)
+  await page.evaluate(`document.querySelector('dialog[open] .btn-primary').click()`)
+  await page.waitFor(`window.__bt.state.notice?.text === '已放到「卡片上新建的」' && !window.__bt.state.busy`)
+  const folderOf = (id) => page.evaluate(`(async () => { const { flat } = await window.__bt.workflow.loadTree(); const b = flat.bookmarks.find((x) => x.id === ${JSON.stringify(id)}); const f = flat.folders.find((x) => x.id === b?.parentId); return f ? { title: f.title, top: f.depth === 1 && f.rootType === 'bookmarks-bar' } : null })()`)
+  const nfMade = await folderOf(nfId)
+  await page.evaluate(undoBar)
+  await page.waitFor(`window.__bt.state.notice?.text === '已撤销' && !window.__bt.state.busy`)
+  const nfBack = (await parentOfCard(nfId)) === nfFrom
+  const nfKept = await page.evaluate(`(async () => (await window.__bt.workflow.loadTree()).flat.folders.some((f) => f.title === '卡片上新建的'))()`)
+  expect(nfMade?.title === '卡片上新建的' && nfMade.top && nfBack && nfKept, 'M1 卡片「移动」里选「新建文件夹…」：建在书签栏下、放进去，撤销回原处，新建的文件夹留着', JSON.stringify({ made: nfMade, back: nfBack, kept: nfKept }))
+  await page.evaluate(`window.__bt.state.notice = null`)
+
   // 设置对话框
   await page.evaluate(`document.querySelector('[aria-label="设置"]').click()`)
   await page.waitFor('document.querySelector("dialog[open]")')

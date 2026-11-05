@@ -53,6 +53,7 @@ describe('手动操作和撤销', () => {
       ])
       expect(rebuilt.sort()).toEqual(['B', 'C'])
       expect(change.rebuilt.B).not.toBe('B')
+      expect(change.rebuilt.C).not.toBe('C')
     }
   })
 

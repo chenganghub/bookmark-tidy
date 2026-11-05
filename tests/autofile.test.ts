@@ -744,7 +744,12 @@ describe('bookmark-ux：角标的 N、待处理的 M', () => {
     await wf.revertChange(change)
     const [rebuilt] = await t.bm.get(change.rebuilt[filed.id])
     expect(rebuilt).toMatchObject({ parentId: 'FV', title: '整理前就放好的', url: 'https://x.com/filed' })
+    // 同一条书签：id、添加时间都和删之前不一样，添加时间也晚于整理
+    expect(rebuilt.id).not.toBe(filed.id)
+    expect(rebuilt.dateAdded).toBeGreaterThan(filed.dateAdded!)
     expect(rebuilt.dateAdded).toBeGreaterThan(mobile.dateAdded!)
+    expect(change.rebuilt[loose.id]).not.toBe(loose.id)
+    expect(change.rebuilt[mobile.id]).not.toBe(mobile.id)
     // 撤销后：根下散放的两条（新 id）回到 N 里，文件夹里重建的那条不算；N 和删之前一样是 2
     expect(await counted()).toEqual([change.rebuilt[loose.id], change.rebuilt[mobile.id]])
     expect((await t.bm.get(change.rebuilt[loose.id]))[0].parentId).toBe('2')
