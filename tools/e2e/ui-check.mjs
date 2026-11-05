@@ -475,6 +475,9 @@ try {
   const steps = await page.evaluate(`[...document.querySelectorAll('.steps .step')].map((s) => s.querySelector('.step-n').textContent.trim() + s.querySelector('.step-title').textContent.trim())`)
   const stepButtons = await page.evaluate(`[...document.querySelectorAll('.steps button')].filter((b) => b.checkVisibility()).map((b) => b.textContent.trim())`)
   expect(steps.join() === '1抓取网页信息,2生成方案,3检查方案,4应用' && stepButtons.includes('抓取网页信息') && !stepButtons.includes('生成说明'), 'O1 整理页四步：抓取在第 ① 步，没有「生成说明」按钮', `${steps.join(' ')}；按钮 ${stepButtons.join('、')}`)
+  // U1 整理页每一步最多一行说明，不超过 24 字
+  const stepDescs = await page.evaluate(`[...document.querySelectorAll('.steps .step-head')].map((h) => [...h.querySelectorAll('.secondary')].map((x) => x.textContent.trim()))`)
+  expect(stepDescs.length === 4 && stepDescs.every((d) => d.length <= 1 && d.every((t) => [...t].length <= 24)), 'U1 整理页每一步最多一行说明，不超过 24 字', JSON.stringify(stepDescs.map((d) => d.map((t) => `${t}（${[...t].length}）`))))
   await page.screenshot(shot('organize-empty'))
   await page.evaluate(`${button('生成方案')}.click()`)
   await page.waitFor('document.querySelector(".applybar")', 30000)
@@ -786,6 +789,12 @@ try {
     await page.evaluate(`window.__bt.state.notice = null`)
   }
   expect(delTexts.length > 0 && delTexts.every((t) => t === '已删除 1 条') && (await page.evaluate(cleanupN)) === 0, 'T6 建议删除逐条「删除」（包括原因已经不在了的）', JSON.stringify(delTexts))
+  // T8 这时「待整理」「待清理」都空了：它们本身不进空文件夹清单
+  const parkedListed = await page.evaluate(`(() => {
+    const { flat, triage } = window.__bt.state
+    return flat.folders.filter((f) => f.depth === 1 && f.rootType === 'other' && ['待整理', '待清理'].includes(f.title)).map((f) => [f.title, f.totalBookmarks, triage.empty.some((g) => g.ids.includes(f.id))])
+  })()`)
+  expect(parkedListed.length === 2 && parkedListed.every(([, n, listed]) => n === 0 && !listed), 'T8 「待整理」「待清理」空了本身不列进空文件夹', JSON.stringify(parkedListed))
   if (await page.evaluate(emptyIds)) {
     // T8 里取消勾选的那组勾回来
     await page.evaluate(`([...document.querySelectorAll('details.tri-more input[type=checkbox]')].filter((b) => !b.checked).forEach((b) => b.click()), true)`)

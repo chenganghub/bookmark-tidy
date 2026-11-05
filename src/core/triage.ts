@@ -72,9 +72,11 @@ export function buildTriage(input: { flat: FlatTree; pages: Record<string, PageI
     return { kind: 'other' }
   }
 
-  // 空文件夹：整棵子树没有书签的（不含根、锁定的、管理员配置的），按最上层分组
+  // 空文件夹：整棵子树没有书签的（不含根、锁定的、管理员配置的），按最上层分组。
+  // 「待整理」「待清理」本身不算：扩展还会往里放，空着是正常的（里面的空子文件夹照样列）；「整理前的空文件夹」整个空了连它一起列
   const locked = descendantFolderIds(flat, [...input.lockedIds])
-  const emptyIds = new Set(flat.folders.filter((f) => f.totalBookmarks === 0 && !locked.has(f.id) && !f.unmodifiable).map((f) => f.id))
+  const kept = (f: FlatFolder) => locked.has(f.id) || !!f.unmodifiable || sp.inbox.has(f.id) || sp.cleanup.has(f.id)
+  const emptyIds = new Set(flat.folders.filter((f) => f.totalBookmarks === 0 && !kept(f)).map((f) => f.id))
   const byParent = Map.groupBy(flat.folders, (f) => f.parentId)
   const subtree = (f: FlatFolder): FlatFolder[] => [f, ...(byParent.get(f.id) ?? []).flatMap(subtree)]
   const empty: EmptyGroup[] = flat.folders

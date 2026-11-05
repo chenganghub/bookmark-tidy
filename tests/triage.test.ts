@@ -119,6 +119,24 @@ describe('待处理', () => {
     expect(t.empty.flatMap((g) => g.ids).some((id) => ['0', '1', '2', '3'].includes(id))).toBe(false)
   })
 
+  it('T8 「待整理」「待清理」空了本身不列（里面的空子文件夹照样列）；「整理前的空文件夹」整个空了连它一起列', () => {
+    const flat = flattenTree(
+      treeOf(
+        [],
+        [
+          folder('待整理', [], 'FIN'),
+          folder('整理前的空文件夹', [folder('旧目录', [folder('旧子目录', [], 'OLD2')], 'OLD1')], 'FHOLD'),
+          folder('待清理', [folder('清理里的空子目录', [], 'CSUB')], 'FCL')
+        ]
+      )
+    )
+    const t = buildTriage({ flat, pages: {}, lockedIds: new Set(), records: {} })
+    expect(t.empty.map((g) => [g.folder.id, g.ids])).toEqual([
+      ['FHOLD', ['OLD2', 'OLD1', 'FHOLD']],
+      ['CSUB', ['CSUB']]
+    ])
+  })
+
   it('待处理 M：待整理、整理前的空文件夹、待清理里的书签数（空文件夹不算）', () => {
     expect(pendingCount(flattenTree(tree()))).toBe(9)
   })
