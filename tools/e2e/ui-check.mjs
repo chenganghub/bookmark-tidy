@@ -605,6 +605,13 @@ try {
   expect(triPrimaries.length === 0, '待处理内容区没有主按钮（删除不用蓝色主按钮）', JSON.stringify(triPrimaries))
   const reasons = await page.evaluate(`[...document.querySelectorAll('.tri')[1].querySelectorAll('.tri-sub')].map((s) => s.textContent.trim())`)
   expect(reasons.length === tri[1].n && reasons.every((r) => /^(失效|重复 · 另一条在「|连不上|原因已经不在了)/.test(r)), 'T5 建议删除每条写原因', JSON.stringify(reasons))
+  // T2 拿不准放哪的每一行：标题、说明（有的话）、域名
+  const unsureRow = await page.evaluate(`(() => {
+    const e = window.__bt.state.triage.unsure[0]
+    const row = document.querySelector('.tri .tri-row')
+    return { name: row.querySelector('.tri-name').textContent.trim(), sub: row.querySelector('.tri-sub').textContent.trim(), desc: window.__bt.state.meta[e.bookmark.id]?.desc ?? '', host: new URL(e.bookmark.url).hostname.replace(/^www\\./, '') }
+  })()`)
+  expect(!!unsureRow.name && unsureRow.sub.includes(unsureRow.host) && (!unsureRow.desc || unsureRow.sub.startsWith(unsureRow.desc)), 'T2 拿不准的每行有标题、说明（有的话）、域名', `「${unsureRow.name}」/「${unsureRow.sub}」`)
   const guessOpt = await page.evaluate(`(() => { const s = document.querySelector('.tri .tri-row select'); return s.options[s.selectedIndex].textContent.trim() })()`)
   const lastOpt = await page.evaluate(`[...document.querySelector('.tri .tri-row select').options].at(-1).textContent.trim()`)
   expect(guessOpt.endsWith('（AI 猜的）') && lastOpt === '新建文件夹…', 'O3、T3 拿不准的预选 AI 猜的目录，最后一项「新建文件夹…」', `${guessOpt}；最后一项 ${lastOpt}`)
