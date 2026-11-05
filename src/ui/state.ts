@@ -29,6 +29,9 @@ export interface Moving {
   newFolder: boolean
 }
 
+/** 「放到」下拉里「新建文件夹…」那一项的值（待处理的行和移动对话框共用） */
+export const NEW_FOLDER = '__new'
+
 export const state = reactive({
   ready: false,
   error: '',
@@ -114,6 +117,8 @@ export async function reload() {
 export async function saveSettings(patch: Partial<Settings>) {
   state.settings = await workflow().saveSettings(patch)
   if (patch.theme && !params.get('theme')) applyTheme(patch.theme)
+  // 改了锁定：待处理的清单（空文件夹、AI 猜的目录）要按新的锁定重算，免得删到、放进刚锁上的文件夹
+  if (patch.lockedFolderIds) state.triage = await workflow().triage()
 }
 
 export function toggleView(v: View) {
@@ -271,7 +276,12 @@ async function manual(run: () => Promise<ManualChange>, text: (c: ManualChange) 
   }
 }
 
-export const moveTo = (ids: string[], target: MoveTarget, label: string) => manual(() => workflow().moveBookmarks(ids, target), () => `已放到「${label}」`)
+/** 已经在那个文件夹里的不动；一条都没动时不报「已放到」 */
+export const moveTo = (ids: string[], target: MoveTarget, label: string) =>
+  manual(
+    () => workflow().moveBookmarks(ids, target),
+    (c) => (c.moved.length ? `已放到「${label}」` : `本来就在「${label}」`)
+  )
 
 /** 删书签；backup 时先下载整棵树的备份（批量删用） */
 export const removeMarks = (ids: string[], backup = false) =>
@@ -282,14 +292,15 @@ export const removeMarks = (ids: string[], backup = false) =>
 
 export const removeEmpty = (ids: string[]) => manual(() => workflow().removeFolders(ids), (c) => `已删除 ${c.removed.length} 个空文件夹`)
 
-/** 结果条上的「撤销」；撤销到一半出错时留着这次的记录，再点一次从断点接着做 */
+/** 结果条上的「撤销」；撤销到一半出错、有没恢复回来的，都留着这次的记录，再点一次从断点接着做 */
 export async function revertManual() {
   const change = state.notice?.change
   if (!change || state.busy) return
   state.busy = true
   try {
     const r = await workflow().revertChange(change)
-    state.notice = { kind: 'manual', text: withSkipped('已撤销', r.skipped) }
+    // 有没恢复回来的（期间被别处改过、书签接口出错）：留着记录，按钮还在，能再试
+    state.notice = r.skipped ? { kind: 'manual', text: `撤销了 ${r.restored} 项，${r.skipped} 项没恢复`, change } : { kind: 'manual', text: '已撤销' }
   } catch (e) {
     state.notice = { kind: 'manual', text: `撤销没做完：${errorText(e)}`, change }
   } finally {

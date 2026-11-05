@@ -15,7 +15,7 @@ import { browserLocks, createMutationLock, type MutationLock } from './locks'
 import { chromeKV, createStore } from './store'
 import { descendantFolderIds, flattenTree, isUnderFolders, pickRoot } from './tree'
 import { buildTriage } from './triage'
-import type { AiUsage, ApplyLog, BookmarkMeta, BookmarksApi, ChatJsonFn, FlatTree, KV, Plan, PlanOptions, RootInfo, Settings, StageProgress, TaxonomyNode, Workflow } from './types'
+import type { AiUsage, ApplyLog, BookmarkMeta, BookmarksApi, ChatJsonFn, FlatBookmark, FlatTree, KV, Plan, PlanOptions, RootInfo, Settings, StageProgress, TaxonomyNode, Workflow } from './types'
 
 const SITE_ORIGINS = ['http://*/*', 'https://*/*']
 
@@ -82,14 +82,18 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
 
   const emptyMeta = (): BookmarkMeta => ({ desc: '', title: '', tags: [], type: '其他', updatedAt: 0 })
 
-  /** 第一段：给书签栏、其他书签下（锁定的除外）还没有说明的写说明；都有了就不发请求、也不报进度 */
-  async function describeMissing(s: Settings, onProgress: (p: StageProgress) => void, signal?: AbortSignal): Promise<{ usage: AiUsage; failedIds: string[] }> {
-    const { flat } = await loadTree()
+  /** 书签栏、其他书签下（锁定的除外）的书签：「生成说明」的范围 */
+  function describeScope(flat: FlatTree, s: Settings): FlatBookmark[] {
     const { bar, other } = roots(flat)
     const locked = descendantFolderIds(flat, lockedIds(flat, s))
+    return flat.bookmarks.filter((b) => (b.rootId === bar.id || b.rootId === other.id) && !isUnderFolders(b, locked))
+  }
+
+  /** 给 scope 里还没有说明的写说明；都有了就不发请求、也不报进度 */
+  async function describeMissing(s: Settings, scope: FlatBookmark[], onProgress: (p: StageProgress) => void, signal?: AbortSignal): Promise<{ usage: AiUsage; failedIds: string[] }> {
     const meta = await store.getMeta()
     const pages = await store.getPageInfos()
-    const todo = flat.bookmarks.filter((b) => (b.rootId === bar.id || b.rootId === other.id) && !isUnderFolders(b, locked) && !meta[b.id])
+    const todo = scope.filter((b) => !meta[b.id])
     if (!todo.length) return { usage: EMPTY_USAGE, failedIds: [] }
     const inputs = todo.map((b) => ({
       id: b.id,
@@ -179,21 +183,24 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
     async describe(onProgress, signal) {
       const s = await settings()
       requireKey(s)
-      return describeMissing(s, onProgress, signal)
+      const { flat } = await loadTree()
+      return describeMissing(s, describeScope(flat, s), onProgress, signal)
     },
 
     async buildPlan(options: PlanOptions, onProgress, signal) {
       const s = await settings()
       requireKey(s)
-      // 整理页只有「生成方案」一个按钮：还没有说明的先写说明，再设计目录、归类
-      const pre = await describeMissing(s, onProgress, signal)
       const chat = chatFor(s)
       const { nodes, flat } = await loadTree()
       const { bar, other } = roots(flat)
+      const scope = participants(flat, options, bar.id, other.id)
+      // 先看有没有要整理的，再花钱写说明
+      if (!scope.length) throw new Error('没有要整理的书签')
+      // 整理页只有「生成方案」一个按钮：参与这次整理、还没有说明的先写说明，再设计目录、归类。
+      // 只写参与的：散放不动的、待清理里的不写（不然生成了方案又不应用，它们会悄悄有了说明、从角标里消失）
+      const pre = await describeMissing(s, scope, onProgress, signal)
       const meta = await store.getMeta()
       const pages = await store.getPageInfos()
-      const scope = participants(flat, options, bar.id, other.id)
-      if (!scope.length) throw new Error('没有要整理的书签')
 
       const lockedSet = new Set(options.lockedFolderIds)
       const topFolders = flat.folders.filter((f) => f.parentId === bar.id)
@@ -269,7 +276,8 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
       }
 
       await store.savePlan(plan)
-      return { plan, usage, issues: [...tax.issues, ...built.issues, ...splitIssues, ...validatePlan(plan)] }
+      // 说明没写成的照样按标题分；条数交给界面，再生成一次会补
+      return { plan, usage, issues: [...tax.issues, ...built.issues, ...splitIssues, ...validatePlan(plan)], describeFailed: pre.failedIds.length }
     },
 
     getPlan: () => store.getPlan(),
@@ -325,16 +333,16 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
 
     moveBookmarks: (ids, target) =>
       lock.run('manual', async () => {
+        // 锁定的文件夹（含子文件夹）不能往里放：界面上的清单可能是锁定之前算的
+        const { flat } = await loadTree()
+        const locked = descendantFolderIds(flat, lockedIds(flat, await settings()))
         let folderId: string
         if ('folderId' in target) folderId = target.folderId
-        else {
-          const { flat } = await loadTree()
-          const locked = descendantFolderIds(flat, lockedIds(flat, await settings()))
-          folderId = await ensureFolder(bookmarks, target.newFolder.parentId, target.newFolder.title, locked)
-        }
+        else folderId = await ensureFolder(bookmarks, target.newFolder.parentId, target.newFolder.title, locked)
+        if (locked.has(folderId) || ('newFolder' in target && locked.has(target.newFolder.parentId))) throw new Error('这个文件夹锁定了，不能往里放')
         const records = await store.getRecords()
         const before = new Set(await store.getHandPlaced())
-        const change = await moveBookmarks(bookmarks, ids, folderId, now())
+        const change = await moveBookmarks(bookmarks, ids, folderId)
         const moved = change.moved.map((m) => m.id)
         change.placed = moved.filter((id) => !before.has(id))
         change.records = Object.fromEntries(moved.filter((id) => records[id]).map((id) => [id, records[id]]))
@@ -347,28 +355,40 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
       lock.run('manual', async () => {
         // 备份交给界面下载（和应用前的备份同格式，不存进快照库，不挤掉一期撤销要用的那几份）；这一步抛错就不删
         if (onBackup) await onBackup(serializeSnapshot(await takeSnapshot(bookmarks, now())))
-        return removeBookmarks(bookmarks, ids, now())
+        const placed = new Set(await store.getHandPlaced())
+        const change = await removeBookmarks(bookmarks, ids)
+        // 删之前你定过位置的：旧 id 已经不在了，不再占名额；记在 change 里，撤销重建时新 id 照样算你定过
+        change.placed = change.removed.filter((r) => placed.has(r.id)).map((r) => r.id)
+        await store.removeHandPlaced(change.placed)
+        return change
       }),
 
     removeFolders: (ids) =>
       lock.run('manual', async () => {
         const { flat } = await loadTree()
+        // 锁定的不删：界面上的清单可能是锁定之前算的
+        const locked = descendantFolderIds(flat, lockedIds(flat, await settings()))
         const depth = new Map(flat.folders.map((f) => [f.id, f.depth]))
         // 深的先删：子文件夹删完，父文件夹才是空的（已经不在的排到最后，删的时候记成跳过）
-        const ordered = [...ids].sort((a, b) => (depth.get(b) ?? 0) - (depth.get(a) ?? 0))
-        return removeFolders(bookmarks, ordered, now())
+        const ordered = ids.filter((id) => !locked.has(id)).sort((a, b) => (depth.get(b) ?? 0) - (depth.get(a) ?? 0))
+        const change = await removeFolders(bookmarks, ordered)
+        change.skipped += ids.length - ordered.length
+        return change
       }),
 
     revertChange: (change) =>
       lock.run('manual', async () => {
+        // 删除的：删之前你定过位置的（change.placed），重建出来的新 id 照样算你定过
+        const wasPlaced = new Set(change.removed.length ? change.placed : [])
         const r = await revertChange(bookmarks, change, async (oldId, newId, isBookmark) => {
           if (!isBookmark) return
-          // 重建的书签：自动整理不当它是新收藏；说明跟着搬到新 id 上
+          // 重建的书签：自动整理不当它是新收藏；说明跟着搬到新 id 上（这几步都能重复做：撤销中断后接着做会再调一次）
           await store.addOwn([newId])
+          if (wasPlaced.has(oldId)) await store.addHandPlaced([newId])
           const m = (await store.getMeta())[oldId]
           if (m) await store.saveMeta({ [newId]: m })
         })
-        // 移回去了的：不再算你定过位置，自动整理的记录也还原
+        // 移动的：移回去了的不再算你定过位置（change.placed 是这次新记的），自动整理的记录也还原
         const back = new Set(r.movedBack)
         await store.removeHandPlaced(change.placed.filter((id) => back.has(id)))
         for (const rec of Object.values(change.records)) if (back.has(rec.bookmarkId)) await store.saveRecord(rec, now())

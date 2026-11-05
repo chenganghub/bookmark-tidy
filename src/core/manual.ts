@@ -3,8 +3,8 @@
 // 位置一律记「执行那一步之前那一刻」的，撤销倒着做：同一个文件夹里移走或删了好几条，也能排回原来的顺序。
 import type { BookmarksApi, ManualChange, RemovedNode } from './types'
 
-export function emptyChange(kind: ManualChange['kind'], at: number): ManualChange {
-  return { kind, at, moved: [], removed: [], folders: {}, placed: [], records: {}, skipped: 0, rebuilt: {} }
+export function emptyChange(): ManualChange {
+  return { moved: [], removed: [], folders: {}, placed: [], records: {}, skipped: 0, rebuilt: {} }
 }
 
 /** 文件夹 parentId 下第一个叫 title、不在 locked 里的文件夹；没有就建一个 */
@@ -14,8 +14,8 @@ export async function ensureFolder(api: BookmarksApi, parentId: string, title: s
 }
 
 /** 移进 folderId。已经在里面的不动也不记；已经不在的、移的时候出错的（期间被别处删了）记 skipped */
-export async function moveBookmarks(api: BookmarksApi, ids: string[], folderId: string, at: number): Promise<ManualChange> {
-  const change = emptyChange('move', at)
+export async function moveBookmarks(api: BookmarksApi, ids: string[], folderId: string): Promise<ManualChange> {
+  const change = emptyChange()
   for (const id of ids) {
     try {
       const [node] = await api.get(id)
@@ -41,8 +41,8 @@ async function recordAncestors(api: BookmarksApi, folderId: string, out: Record<
 }
 
 /** 删书签。每条记下删之前的位置，和所在文件夹的祖先链 */
-export async function removeBookmarks(api: BookmarksApi, ids: string[], at: number): Promise<ManualChange> {
-  const change = emptyChange('delete', at)
+export async function removeBookmarks(api: BookmarksApi, ids: string[]): Promise<ManualChange> {
+  const change = emptyChange()
   for (const id of ids) {
     try {
       const [node] = await api.get(id)
@@ -57,8 +57,8 @@ export async function removeBookmarks(api: BookmarksApi, ids: string[], at: numb
 }
 
 /** 删空文件夹。ids 要深的在前（子文件夹先删）；删之前里面还有东西的跳过（remove 本来也删不了非空文件夹） */
-export async function removeFolders(api: BookmarksApi, ids: string[], at: number): Promise<ManualChange> {
-  const change = emptyChange('delete', at)
+export async function removeFolders(api: BookmarksApi, ids: string[]): Promise<ManualChange> {
+  const change = emptyChange()
   for (const id of ids) {
     try {
       const [node] = await api.get(id)
@@ -88,7 +88,8 @@ const exists = async (api: BookmarksApi, id: string): Promise<boolean> => {
  * 撤销。移动：倒着移回原来的位置，已经不在目标文件夹里的（之后又被挪过、删了）不动。
  * 删除：倒着重建到原来的位置；父文件夹也没了就按祖先链（或这次删掉的文件夹）先重建。
  * 能接着做：每建一个就记进 change.rebuilt（旧 id → 新 id），已经回到原处的移动不再移；
- * 书签接口出错的那一条算跳过、接着做别的，onRebuilt 出错（存储写不进去）直接抛出，再调一次从断点接着做。
+ * 书签接口出错的那一条算跳过、接着做别的；onRebuilt 出错（存储写不进去）直接抛出，再调一次从断点接着做，
+ * 已经建过的那几条会再调一次 onRebuilt（要求它能重复调）。
  */
 export async function revertChange(
   api: BookmarksApi,
@@ -129,25 +130,27 @@ export async function revertChange(
     const parent = await ensureParent(info.parentId)
     const made = await api.create({ parentId: parent, index: info.index, title: info.title })
     change.rebuilt[id] = made.id
-    await onRebuilt(id, made.id, false)
     return made.id
   }
   for (const r of [...change.removed].reverse()) {
+    const isBookmark = r.url !== undefined
     const done = change.rebuilt[r.id]
     if (done && (await exists(api, done))) {
+      // 上次撤销到一半已经建过：onRebuilt 可能没做完，再调一次
+      await onRebuilt(r.id, done, isBookmark)
       restored++
       continue
     }
     let made: string
     try {
       const parent = await ensureParent(r.parentId)
-      made = (await api.create({ parentId: parent, index: r.index, title: r.title, ...(r.url !== undefined ? { url: r.url } : {}) })).id
+      made = (await api.create({ parentId: parent, index: r.index, title: r.title, ...(isBookmark ? { url: r.url } : {}) })).id
     } catch {
       skipped++
       continue
     }
     change.rebuilt[r.id] = made
-    await onRebuilt(r.id, made, r.url !== undefined)
+    await onRebuilt(r.id, made, isBookmark)
     restored++
   }
   return { restored, skipped, movedBack }

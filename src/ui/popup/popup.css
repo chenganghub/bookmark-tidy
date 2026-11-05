@@ -57,11 +57,7 @@ body.popup {
   min-height: 32px;
 }
 
-/* 「待处理 M ›」：整行能点，去管理页 */
-.pop-pending {
-  min-height: 36px;
-}
-
+/* 「待处理 M ›」：整行能点，去管理页（行高和别的行一样，见下面 .pop-row） */
 .pop-pending .icon {
   color: var(--secondary);
 }

@@ -40,6 +40,8 @@ export const EMPTY_STATS: AutoStats = { filed: 0, toInbox: 0, undone: 0, movedAg
 
 /** 计数的读改写按存储对象排队（后台里自动整理和地址栏各建了一个 store，共用同一个 kv） */
 const statChains = new WeakMap<KV, Promise<unknown>>()
+/** 「你定过位置的」的读改写也按存储对象排队：同一个页面里几处同时改时不丢（不同页面之间靠改书签的锁） */
+const placedChains = new WeakMap<KV, Promise<unknown>>()
 
 const K = {
   settings: 'settings',
@@ -103,6 +105,14 @@ export function createStore(kv: KV): Store {
     return { ...structuredClone(DEFAULT_SETTINGS), ...saved, ai: { ...DEFAULT_SETTINGS.ai, ...(saved.ai || {}) } }
   }
   const getLog = (id: string) => one<ApplyLog>(K.apply(id))
+  const editPlaced = (ids: string[], edit: (cur: string[]) => string[]): Promise<void> => {
+    if (!ids.length) return Promise.resolve()
+    const run = (placedChains.get(kv) ?? Promise.resolve()).then(async () => {
+      await kv.set({ [K.handPlaced]: edit((await one<string[]>(K.handPlaced)) || []) })
+    })
+    placedChains.set(kv, run.catch(() => {}))
+    return run
+  }
 
   return {
     getSettings,
@@ -180,16 +190,11 @@ export function createStore(kv: KV): Store {
     async getHandPlaced() {
       return (await one<string[]>(K.handPlaced)) || []
     },
-    async addHandPlaced(ids) {
-      if (!ids.length) return
-      const cur = (await one<string[]>(K.handPlaced)) || []
-      const next = [...cur.filter((x) => !ids.includes(x)), ...ids]
-      await kv.set({ [K.handPlaced]: next.slice(-MAX_HAND_PLACED) })
+    addHandPlaced(ids) {
+      return editPlaced(ids, (cur) => [...cur.filter((x) => !ids.includes(x)), ...ids].slice(-MAX_HAND_PLACED))
     },
-    async removeHandPlaced(ids) {
-      if (!ids.length) return
-      const cur = (await one<string[]>(K.handPlaced)) || []
-      await kv.set({ [K.handPlaced]: cur.filter((x) => !ids.includes(x)) })
+    removeHandPlaced(ids) {
+      return editPlaced(ids, (cur) => cur.filter((x) => !ids.includes(x)))
     },
     getLastBatch: () => one<string>(K.lastBatch),
     async setLastBatch(batchId) {

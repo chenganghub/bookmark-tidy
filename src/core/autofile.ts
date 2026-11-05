@@ -113,7 +113,8 @@ export interface AutoFilerDeps {
 
 /** 会话存储里的键。pending：预览里准备好的去向（后台空闲约 30 秒会被停掉，内存里的会丢） */
 const Q = { queue: 'auto:queue', importing: 'auto:importing', batch: 'auto:batch', pending: 'auto:pending', lastError: 'auto:lastError' }
-const ONE_OFF_OPS = new Set(['apply', 'undo', 'restore'])
+/** 这些操作拿着锁时收到的移动不算「你又挪走」：一期的应用、撤销、恢复，和管理页待处理、卡片上的移动（那里你挪的会记成你定过位置） */
+const ONE_OFF_OPS = new Set(['apply', 'undo', 'restore', 'manual'])
 /** 待确认的预览多久过期 */
 const BATCH_TTL_MS = 30 * 60000
 /** 「整理中」这么久没有进展，当作后台中途被停掉了（一条最长：抓网页 + 两次 30 秒的 AI 请求） */
@@ -322,7 +323,7 @@ export function createAutoFiler(deps: AutoFilerDeps) {
         confidence: sug?.confidence ?? 0,
         status: decision?.kind === 'inbox' ? 'inbox' : 'filed',
         // 进待整理时 AI 给的目录还在候选里：待处理里预选它
-        ...(decision?.kind === 'inbox' && sug && ctx.cands.idOf[sug.path] ? { guess: { folderId: ctx.cands.idOf[sug.path], path: sug.path } } : {})
+        ...(decision?.kind === 'inbox' && sug && ctx.cands.idOf[sug.path] ? { guessFolderId: ctx.cands.idOf[sug.path] } : {})
       }
       await store.saveRecord(rec, now())
       await store.bumpStats(decision?.kind === 'inbox' ? { toInbox: 1 } : decision?.kind === 'folder' ? { filed: 1 } : {})
@@ -702,11 +703,11 @@ export function createAutoFiler(deps: AutoFilerDeps) {
       const s = await store.getSettings()
       const chosen = new Set(bookmarkIds)
       const items = pending.filter((p) => chosen.has(p.bookmarkId))
-      // 没勾的 = 你定了这几条不动
-      await keepUnchosen(pending.filter((p) => !chosen.has(p.bookmarkId)))
       // 先收起预览、显示「整理中」：弹窗里不再有「放好」「取消」可点；之后每放一条写一次进度
       const l = (live = liveBatch({ ...b, phase: 'running', items: undefined, total: items.length, done: 0 }))
       await l.set(l.get())
+      // 没勾的 = 你定了这几条不动。在改书签的锁里写（等锁时上面的心跳一直在写）：和管理页待处理里的移动（也写「你定过位置的」）不会互相覆盖
+      await deps.lock.run('button', () => keepUnchosen(pending.filter((p) => !chosen.has(p.bookmarkId))))
       let n = 0
       const result = await commitBatch(batchId, items, s, () => l.set({ ...l.get(), done: ++n }))
       // 清掉预览的去向只是收尾，失败了也不影响结果

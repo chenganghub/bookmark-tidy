@@ -43,7 +43,7 @@ export function buildTriage(input: { flat: FlatTree; pages: Record<string, PageI
   const planGuess = new Map((plan?.items ?? []).filter((i) => i.target === INBOX && i.guess).map((i) => [i.bookmarkId, reused[i.guess!]]))
   const guessOf = (b: FlatBookmark): FolderChoice | undefined => {
     const r = records[b.id]
-    const fromRecord = r?.status === 'inbox' && r.guess ? choiceOf.get(r.guess.folderId) : undefined
+    const fromRecord = r?.status === 'inbox' && r.guessFolderId ? choiceOf.get(r.guessFolderId) : undefined
     const fromPlan = planGuess.get(b.id)
     return fromRecord ?? (fromPlan ? choiceOf.get(fromPlan) : undefined)
   }
@@ -54,11 +54,14 @@ export function buildTriage(input: { flat: FlatTree; pages: Record<string, PageI
 
   // 建议删除的原因：待清理以外还有同一网址的一条才算重复（只在待清理里互为重复的算「其他」，批量删不会把副本全删光）
   const inCleanup = under(sp.cleanup)
+  const cleanupBooks = flat.bookmarks.filter(inCleanup)
   const outside = new Map<string, FlatBookmark>()
-  for (const b of flat.bookmarks) {
-    const k = normalizeUrl(b.url)
-    if (!inCleanup(b) && !outside.has(k)) outside.set(k, b)
-  }
+  // 待清理是空的（多数时候）就不用给整棵树算规范化网址
+  if (cleanupBooks.length)
+    for (const b of flat.bookmarks) {
+      const k = normalizeUrl(b.url)
+      if (!inCleanup(b) && !outside.has(k)) outside.set(k, b)
+    }
   const rootTitle = (b: FlatBookmark) => flat.roots.find((r) => r.id === b.rootId)?.title ?? ''
   const reasonOf = (b: FlatBookmark): CleanupReason => {
     const page = pages[b.url]
@@ -86,7 +89,7 @@ export function buildTriage(input: { flat: FlatTree; pages: Record<string, PageI
 
   return {
     unsure: [...flat.bookmarks.filter(under(sp.inbox)), ...flat.bookmarks.filter(under(sp.holding))].map(withGuess),
-    cleanup: flat.bookmarks.filter(inCleanup).map((b) => ({ bookmark: b, reason: reasonOf(b) })),
+    cleanup: cleanupBooks.map((b) => ({ bookmark: b, reason: reasonOf(b) })),
     empty
   }
 }

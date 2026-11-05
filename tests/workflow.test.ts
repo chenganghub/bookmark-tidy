@@ -421,14 +421,49 @@ describe('bookmark-ux：待处理和手动操作', () => {
   it('O1 生成方案前先给没有说明的写说明（进度从「说明」开始，用量算在一起）；都有了就不再写', async () => {
     const { wf, seen } = setup()
     const stages: string[] = []
-    const { usage } = await wf.buildPlan(planOptions(), (p) => void (stages.at(-1) !== p.stage && stages.push(p.stage)))
+    const { usage, describeFailed } = await wf.buildPlan(planOptions(), (p) => void (stages.at(-1) !== p.stage && stages.push(p.stage)))
     expect(stages[0]).toBe('describe')
     expect(seen[0].stage).toBe('describe')
     expect(usage.requests).toBe(seen.length)
+    expect(describeFailed).toBe(0)
     const n = seen.length
     await wf.buildPlan(planOptions(), () => {})
     expect(seen.slice(n).map((s) => s.stage)).not.toContain('describe')
   })
+
+  it('O1 生成方案只给参与这次整理的写说明：散放不动的不写（不然它会悄悄从角标里消失）；没有要整理的就不花钱写', async () => {
+    const { wf, seen } = setup()
+    await wf.buildPlan(planOptions(), () => {})
+    expect(seen.find((s) => s.stage === 'describe')!.user).not.toContain('loose |')
+    expect((await wf.getMeta()).loose).toBeUndefined()
+    const lonely = setup({ tree: treeOf([link('只有散放的', 'https://a.com', {}, 'a')]) })
+    await expect(lonely.wf.buildPlan(planOptions(), () => {})).rejects.toThrow('没有要整理的书签')
+    expect(lonely.seen).toEqual([])
+  })
+
+  it('不能往锁定的文件夹里放、不删锁定的空文件夹（界面上的清单可能是锁定之前算的）', async () => {
+    const tree = treeOf([folder('受保护资料', [folder('空的', [], 'LE')], 'LOCK'), folder('空的不锁', [], 'FE')], [link('其他', 'https://other.com', {}, 'o1')])
+    const { wf, api } = setup({ tree })
+    await wf.saveSettings({ lockedFolderIds: ['LOCK'] })
+    await expect(wf.moveBookmarks(['o1'], { folderId: 'LOCK' })).rejects.toThrow('锁定')
+    await expect(wf.moveBookmarks(['o1'], { newFolder: { parentId: 'LOCK', title: '新' } })).rejects.toThrow('锁定')
+    expect((await api.get('o1'))[0].parentId).toBe('2')
+    const change = await wf.removeFolders(['LE', 'FE'])
+    expect(change.removed.map((r) => r.id)).toEqual(['FE'])
+    expect(change.skipped).toBe(1)
+    expect((await api.get('LE'))[0].title).toBe('空的')
+  })
+
+  it('删了你定过位置的书签再撤销：重建出来的新 id 照样算你定过；删掉以后旧 id 不占名额', async () => {
+    const { wf, kv } = setup()
+    const store = createStore(kv)
+    await store.addHandPlaced(['o2'])
+    const change = await wf.removeBookmarks(['o2'])
+    expect(await store.getHandPlaced()).toEqual([])
+    await wf.revertChange(change)
+    expect(await store.getHandPlaced()).toEqual([change.rebuilt.o2])
+  })
+
 
   it('K3 应用完成后，方案里没勾的记成你定过位置', async () => {
     const { wf, kv } = setup()

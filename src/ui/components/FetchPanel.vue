@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 抓取网页信息（整理页第 ① 步；原来在体检页）：开抓前列出抓多少、跳过多少，能按文件夹、按域名取消勾选
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { hostOf } from '../../core/rules'
 import type { FetchPlan, FetchProgress, FetchRun, FetchStatus, SkipReason } from '../../core/types'
 import { errorText, fetchStatusText, skipReasonText } from '../format'
@@ -68,18 +68,37 @@ async function prepare() {
 /** 勾上 = 抓，取消 = 排除；改完重算清单 */
 const toggled = (list: string[], id: string, include: boolean) => (include ? list.filter((x) => x !== id) : [...new Set([...list, id])])
 
-async function toggleDomain(host: string, include: boolean) {
-  await saveSettings({ excludeDomains: toggled(state.settings?.excludeDomains ?? [], host, include) })
-  plan.value = await workflow().planFetch()
+/** 重算清单：算的时候「开始」不能点（不拿旧清单开抓）；连着勾几下只用最后一次的结果 */
+const replanning = ref(false)
+let replanSeq = 0
+async function replan(save?: () => Promise<void>) {
+  const seq = ++replanSeq
+  replanning.value = true
+  error.value = ''
+  try {
+    await save?.()
+    const next = await workflow().planFetch()
+    if (seq === replanSeq && plan.value) plan.value = next
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    if (seq === replanSeq) replanning.value = false
+  }
 }
 
-async function toggleFolder(id: string, include: boolean) {
-  await saveSettings({ excludeFolderIds: toggled(state.settings?.excludeFolderIds ?? [], id, include) })
-  plan.value = await workflow().planFetch()
-}
+const toggleDomain = (host: string, include: boolean) => replan(async () => void (await saveSettings({ excludeDomains: toggled(state.settings?.excludeDomains ?? [], host, include) })))
+const toggleFolder = (id: string, include: boolean) => replan(async () => void (await saveSettings({ excludeFolderIds: toggled(state.settings?.excludeFolderIds ?? [], id, include) })))
+
+// 同一页上方改了锁定：锁定的不抓，清单跟着重算
+watch(
+  () => state.settings?.lockedFolderIds.join(),
+  () => {
+    if (plan.value && !run.value) void replan()
+  }
+)
 
 async function start() {
-  if (!plan.value) return
+  if (!plan.value || replanning.value) return
   const r = workflow().startFetch(plan.value, (p) => (progress.value = p))
   run.value = r
   progress.value = r.progress()
@@ -136,7 +155,7 @@ const paused = computed(() => !!progress.value?.paused)
         </div>
       </details>
       <div class="row-gap" style="margin-top: 16px">
-        <button class="btn" type="button" :disabled="!plan.toFetch.length" @click="start">开始</button>
+        <button class="btn" type="button" :disabled="!plan.toFetch.length || replanning" @click="start">开始</button>
         <button class="btn" type="button" @click="plan = null">取消</button>
       </div>
     </template>

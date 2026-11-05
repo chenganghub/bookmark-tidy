@@ -244,7 +244,10 @@ try {
   await page.waitFor('document.querySelector("dialog[open] select")')
   await sleep(250)
   await page.screenshot(shot('move-dialog'))
-  const moveTo = await page.evaluate(`(() => { const s = document.querySelector('dialog[open] select'); const o = [...s.options].find((x) => x.value !== s.value && x.value !== '__new'); s.value = o.value; s.dispatchEvent(new Event('change')); return { id: o.value, path: o.textContent.trim() } })()`)
+  // 打开时预选它现在所在的文件夹（在前两层里的话）；「放到…」占位（值为空、不能选）和「新建文件夹…」不算
+  const moveDefault = await page.evaluate(`document.querySelector('dialog[open] select').value`)
+  const moveTo = await page.evaluate(`(() => { const s = document.querySelector('dialog[open] select'); const o = [...s.options].find((x) => x.value && x.value !== s.value && x.value !== '__new'); s.value = o.value; s.dispatchEvent(new Event('change')); return { id: o.value, path: o.textContent.trim() } })()`)
+  expect(moveDefault === from, 'M1 移动对话框预选它现在所在的文件夹', `${moveDefault} / ${from}`)
   await page.evaluate(`document.querySelector('dialog[open] .btn-primary').click()`)
   await page.waitFor(`window.__bt.state.notice?.kind === 'manual' && !window.__bt.state.busy`)
   const movedNotice = await page.evaluate(`document.querySelector('.bar .grow').textContent.trim()`)

@@ -15,21 +15,21 @@ const tree = () =>
 describe('手动操作和撤销', () => {
   it('T3 同一个文件夹里移走几条，撤销后排回原来的顺序；已经在目标里的不动，不在了的记跳过', async () => {
     const api = createFakeBookmarks(tree())
-    const change = await moveBookmarks(api, ['B', 'C', 'nope'], 'G', 1)
+    const change = await moveBookmarks(api, ['B', 'C', 'nope'], 'G')
     expect(change.moved.map((m) => [m.id, m.from.index])).toEqual([
       ['B', 1],
       ['C', 1]
     ])
     expect(change.skipped).toBe(1)
     expect(await titles(api, 'G')).toEqual(['B', 'C'])
-    expect((await moveBookmarks(api, ['B'], 'G', 2)).moved).toEqual([])
+    expect((await moveBookmarks(api, ['B'], 'G')).moved).toEqual([])
     expect(await revertChange(api, change, noop)).toMatchObject({ restored: 2, skipped: 0, movedBack: ['C', 'B'] })
     expect(await titles(api, 'F')).toEqual(['A', 'B', 'C', 'D'])
   })
 
   it('撤销移动：之后又被挪走的不动、记跳过', async () => {
     const api = createFakeBookmarks(tree())
-    const change = await moveBookmarks(api, ['B'], 'G', 1)
+    const change = await moveBookmarks(api, ['B'], 'G')
     await api.move('B', { parentId: '2' })
     expect(await revertChange(api, change, noop)).toMatchObject({ restored: 0, skipped: 1, movedBack: [] })
     expect((await api.get('B'))[0].parentId).toBe('2')
@@ -41,7 +41,7 @@ describe('手动操作和撤销', () => {
       ['C', 'B']
     ]) {
       const api = createFakeBookmarks(tree())
-      const change = await removeBookmarks(api, order, 1)
+      const change = await removeBookmarks(api, order)
       expect(await titles(api, 'F')).toEqual(['A', 'D'])
       const rebuilt: string[] = []
       await revertChange(api, change, async (oldId, _newId, isBookmark) => void (isBookmark && rebuilt.push(oldId)))
@@ -58,7 +58,7 @@ describe('手动操作和撤销', () => {
 
   it('T7 删了书签，后来它所在的文件夹也没了：撤销时按祖先链先把文件夹重建出来', async () => {
     const api = createFakeBookmarks(treeOf([], [folder('待清理', [folder('子', [link('X', 'https://x.com', {}, 'X')], 'SUB')], 'FCL')]))
-    const change = await removeBookmarks(api, ['X'], 1)
+    const change = await removeBookmarks(api, ['X'])
     await api.remove('SUB')
     await api.remove('FCL')
     await revertChange(api, change, noop)
@@ -72,7 +72,7 @@ describe('手动操作和撤销', () => {
     const api = createFakeBookmarks(
       treeOf([folder('前', [], 'P0'), folder('旧', [folder('甲', [folder('乙', [], 'Y')], 'X'), folder('丙', [], 'Z')], 'OLD'), folder('后', [], 'P1'), folder('有东西', [link('留着', 'https://keep.com', {}, 'K')], 'KEEP')])
     )
-    const change = await removeFolders(api, ['Y', 'X', 'Z', 'OLD', 'KEEP'], 1)
+    const change = await removeFolders(api, ['Y', 'X', 'Z', 'OLD', 'KEEP'])
     expect(change.removed.map((r) => r.id)).toEqual(['Y', 'X', 'Z', 'OLD'])
     expect(change.skipped).toBe(1)
     expect(await titles(api, '1')).toEqual(['前', '后', '有东西'])
@@ -84,17 +84,20 @@ describe('手动操作和撤销', () => {
     expect(await titles(api, kids[0].id)).toEqual(['乙'])
   })
 
-  it('撤销到一半出错（存储写不进去）：再撤一次从断点接着做，不重复建', async () => {
+  it('撤销到一半出错（存储写不进去）：再撤一次从断点接着做，不重复建；出错的那条和已经建好的都再记一次', async () => {
     const api = createFakeBookmarks(tree())
-    const change = await removeBookmarks(api, ['A', 'B', 'C'], 1)
+    const change = await removeBookmarks(api, ['A', 'B', 'C'])
     let calls = 0
     await expect(
       revertChange(api, change, async () => {
         if (++calls === 2) throw new Error('存储写不进去')
       })
     ).rejects.toThrow('存储写不进去')
-    await revertChange(api, change, noop)
+    const second: string[] = []
+    await revertChange(api, change, async (oldId) => void second.push(oldId))
     expect(await titles(api, 'F')).toEqual(['A', 'B', 'C', 'D'])
+    // 倒着做：C 第一次记成了，B 记的时候出错；第二次 C、B 已经建好（再记一次），A 新建
+    expect(second).toEqual(['C', 'B', 'A'])
   })
 
   it('T4 新建文件夹：同一个父文件夹下有同名的就用它，锁定的不算', async () => {

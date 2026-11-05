@@ -37,7 +37,7 @@ const pages: Record<string, PageInfo> = {
   'https://back.com/': { url: 'https://back.com/', status: 'ok', httpStatus: 200, fetchedAt: 1 }
 }
 
-const inboxRec = (id: string, guess?: AutoRecord['guess']): AutoRecord => ({
+const inboxRec = (id: string, guessFolderId?: string): AutoRecord => ({
   bookmarkId: id,
   at: 1,
   source: 'save',
@@ -46,7 +46,7 @@ const inboxRec = (id: string, guess?: AutoRecord['guess']): AutoRecord => ({
   path: '待整理',
   confidence: 0.3,
   status: 'inbox',
-  ...(guess ? { guess } : {})
+  ...(guessFolderId ? { guessFolderId } : {})
 })
 
 const triage = (patch: Partial<Parameters<typeof buildTriage>[0]> = {}) => buildTriage({ flat: flattenTree(tree()), pages, lockedIds: new Set(['LOCK']), records: {}, ...patch })
@@ -78,7 +78,7 @@ describe('待处理', () => {
         { bookmarkId: 'h1', target: 'inbox', guess: '已经没了' }
       ]
     } as unknown as Plan
-    const records = { u1: inboxRec('u1', { folderId: 'FC', path: '前端/CSS' }), h1: inboxRec('h1', { folderId: 'LSUB', path: '受保护资料/空的锁定子目录' }) }
+    const records = { u1: inboxRec('u1', 'FC'), h1: inboxRec('h1', 'LSUB') }
     const got = Object.fromEntries(triage({ records, plan }).unsure.map((e) => [e.bookmark.id, e.guess]))
     expect(got).toEqual({ u1: { id: 'FC', path: '前端 / CSS' }, u2: { id: 'FAI', path: 'AI 工具' }, h1: undefined })
   })

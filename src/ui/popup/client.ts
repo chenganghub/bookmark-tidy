@@ -90,22 +90,21 @@ function demoClient(stateName: string): PopupClient {
     toInbox: i % 5 === 4,
     confidence: i % 5 === 4 ? 0.4 : 0.9
   }))
-  const batch: BatchState | undefined =
-    stateName === 'running'
-      ? { id: 'b1', phase: 'running', total: 12, done: 5, startedAt: D }
-      : stateName === 'preview'
-        ? { id: 'b1', phase: 'preview', total: 12, done: 12, startedAt: D, items: previewItems }
-        : stateName === 'result'
-          ? { id: 'b1', phase: 'done', total: 9, done: 9, startedAt: D, result: { filed: 7, toInbox: 2, skipped: 0 } }
-          : stateName === 'partial'
-            ? { id: 'b1', phase: 'done', total: 3, done: 3, startedAt: D, result: { filed: 2, toInbox: 0, skipped: 0, failed: 1, error: '接口拒绝访问（HTTP 401），检查 API key' } }
-            : undefined
+  const batches: Record<string, BatchState> = {
+    running: { id: 'b1', phase: 'running', total: 12, done: 5, startedAt: D },
+    preview: { id: 'b1', phase: 'preview', total: 12, done: 12, startedAt: D, items: previewItems },
+    result: { id: 'b1', phase: 'done', total: 9, done: 9, startedAt: D, result: { filed: 7, toInbox: 2, skipped: 0 } },
+    partial: { id: 'b1', phase: 'done', total: 3, done: 3, startedAt: D, result: { filed: 2, toInbox: 0, skipped: 0, failed: 1, error: '接口拒绝访问（HTTP 401），检查 API key' } }
+  }
+  const batch: BatchState | undefined = batches[stateName]
+  /** 每个状态还没放好的新收藏数 */
+  const unfiled: Record<string, number> = { result: 0, empty: 0, partial: 1 }
   const status: AutoStatus = {
     organized: stateName !== 'gate',
     autoFile: true,
     hasPermission: true,
     hasKey: true,
-    unfiled: stateName === 'result' || stateName === 'empty' ? 0 : stateName === 'partial' ? 1 : 3,
+    unfiled: unfiled[stateName] ?? 3,
     pending: stateName === 'empty' ? 0 : 4,
     stats: { filed: 12, toInbox: 3, undone: 1, movedAgain: 0, omnibox: 5, buttonRuns: 2 },
     recent: stateName === 'empty' ? [] : recent,

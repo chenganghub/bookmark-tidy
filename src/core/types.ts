@@ -545,15 +545,13 @@ export interface RemovedNode {
 
 /** 待处理和卡片上的一次手动操作，结果条的「撤销」用（只在管理页内存里留最近一次） */
 export interface ManualChange {
-  kind: 'move' | 'delete'
-  at: number
   /** 按执行顺序；from.index 是移那一步之前那一刻的位置。撤销倒着来 */
   moved: { id: string; from: { parentId: string; index: number }; to: string }[]
   /** 按执行顺序（删空文件夹时深的在前）。撤销倒着来 */
   removed: RemovedNode[]
   /** 删掉的书签所在文件夹的祖先链（不含根）：撤销时文件夹也没了就按它重建 */
   folders: Record<string, RemovedNode>
-  /** 这次新记进「你定过位置的」的 id：撤销时移出去 */
+  /** 移动：这次新记进「你定过位置的」的 id，撤销时移出去。删除：删之前就在里面的 id，撤销重建时新 id 记回去 */
   placed: string[]
   /** 移动前的自动整理记录：撤销时写回去 */
   records: Record<string, AutoRecord>
@@ -579,8 +577,8 @@ export interface AutoRecord {
   path: string
   confidence: number
   status: AutoStatus
-  /** 进待整理时 AI 给的目录（在候选里的才记）：待处理里预选它 */
-  guess?: { folderId: string; path: string }
+  /** 进待整理时 AI 给的目录的文件夹 id（在候选里的才记）：待处理里预选它 */
+  guessFolderId?: string
 }
 
 export interface AutoStats {
@@ -650,8 +648,8 @@ export interface Workflow {
 
   /** 第一段：给还没有说明（且不是手改过）的书签写说明 */
   describe(onProgress: (p: StageProgress) => void, signal?: AbortSignal): Promise<{ usage: AiUsage; failedIds: string[] }>
-  /** 第二、三段 + 生成方案 */
-  buildPlan(options: PlanOptions, onProgress: (p: StageProgress) => void, signal?: AbortSignal): Promise<{ plan: Plan; usage: AiUsage; issues: string[] }>
+  /** 先给参与整理、还没有说明的写说明（describeFailed 是没写成的条数），再第二、三段 + 生成方案 */
+  buildPlan(options: PlanOptions, onProgress: (p: StageProgress) => void, signal?: AbortSignal): Promise<{ plan: Plan; usage: AiUsage; issues: string[]; describeFailed: number }>
   getPlan(): Promise<Plan | undefined>
   savePlan(plan: Plan): Promise<void>
 

@@ -434,6 +434,19 @@ describe('撤销和统计', () => {
     expect((await t.store.getStats()).movedAgain).toBe(0)
   })
 
+  it('管理页待处理、卡片上的移动（锁里的操作是 manual）不算「又挪走」', async () => {
+    const t = await setup({ tabs: ['https://x.com/a'] })
+    const { node } = await t.save('会被放到别处', 'https://x.com/a')
+    await t.later()
+    expect(await t.parentOf(node.id)).toBe('FV')
+    await t.lock.run('manual', async () => {
+      await t.bm.move(node.id, { parentId: 'FC' })
+      await t.filer.onMoved(node.id, { parentId: 'FC' })
+    })
+    expect((await t.store.getStats()).movedAgain).toBe(0)
+    expect((await t.store.getRecord(node.id))?.status).toBe('filed')
+  })
+
   it('7 天内用户挪走自动放好的：记一次「又挪走」；自己的移动不算', async () => {
     const t = await setup({ tabs: ['https://x.com/a'] })
     const { node } = await t.save('会被挪走', 'https://x.com/a')
@@ -713,8 +726,8 @@ describe('bookmark-ux：角标的 N、待处理的 M', () => {
     const a = (await t.save('猜 CSS', 'https://x.com/a')).node
     const b = (await t.save('乱猜', 'https://x.com/b')).node
     await t.later()
-    expect(await t.store.getRecord(a.id)).toMatchObject({ status: 'inbox', guess: { folderId: 'FC', path: '前端/CSS' } })
+    expect(await t.store.getRecord(a.id)).toMatchObject({ status: 'inbox', guessFolderId: 'FC' })
     expect((await t.store.getRecord(b.id))?.status).toBe('inbox')
-    expect((await t.store.getRecord(b.id))?.guess).toBeUndefined()
+    expect((await t.store.getRecord(b.id))?.guessFolderId).toBeUndefined()
   })
 })

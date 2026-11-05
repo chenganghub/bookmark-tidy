@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 像用户一样在有界面的 Chrome 里走一遍（用正式构建 .output/chrome-mv3，不是 e2e 构建）：
 // 扩展管理页的卡片 → 点工具栏图标打开管理页 → 设置里填 key、测试连接 → 第一次抓网页时弹授权、点「允许」→ 抓取 →
-// 生成说明、生成方案 → 点「应用」→ 点「撤销」→ 再应用一次，用设置里的「从备份恢复」选下载的备份文件恢复。
+// 生成方案（先写说明再分目录）→ 点「应用」→ 点「撤销」→ 再应用一次，用设置里的「从备份恢复」选下载的备份文件恢复。
 // 跑在临时配置里，书签是真实书签文件的副本，跑完删掉临时配置；真实配置不碰。
 // 浏览器自己的界面（工具栏图标、授权对话框）用 tools/e2e/window.ps1 点；页面里用 CDP 发真的鼠标点击。
 // 终端只打印数字；窗口截图存 %TEMP%\bt-e2e\ui-*.png（里面有书签标题，只留在本机）。
@@ -66,7 +66,6 @@ const fingerprint = (tuples) =>
     .slice(0, 16)
 const countBookmarks = (tuples) => tuples.filter((t) => t[4] !== null).length
 const button = (text) => `[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === ${JSON.stringify(text)} && b.checkVisibility())`
-const buttonStarting = (text) => `[...document.querySelectorAll('button')].find((b) => b.textContent.trim().startsWith(${JSON.stringify(text)}) && b.checkVisibility())`
 const READY = 'window.__bt && document.querySelector(".content .grid, .content .list, .content .stats, .content .panel, .content .empty")'
 
 /** chrome://extensions 里这个扩展的卡片（WebUI 全是 shadow DOM，挨层找） */
@@ -154,7 +153,8 @@ try {
 
   // ---------------------------------------------------------------- A2：第一次抓取时弹授权
   const grantedBefore = await mgr.evaluate(`chrome.permissions.contains({ origins: ['https://*/*'] })`)
-  await mgr.click(button('体检'))
+  // 抓取在整理页第 ① 步（bookmark-ux）
+  await mgr.click(button('整理'))
   await mgr.waitFor(button('抓取网页信息'))
   await mgr.click(button('抓取网页信息'))
   await sleep(1200)
@@ -178,28 +178,21 @@ try {
   record('抓取', fetched.n > 300, `清单「${planText}」；点「开始」后 ${Math.round((Date.now() - t0) / 1000)} 秒抓完 ${fetched.n} 个网址：${Object.entries(fetched.m).map(([k, n]) => `${k} ${n}`).join('、')}`)
   shot('fetched')
 
-  // ---------------------------------------------------------------- 写说明、生成方案
-  await mgr.click(button('整理'))
-  await mgr.waitFor(buttonStarting('生成说明'))
+  // ---------------------------------------------------------------- 生成方案（同一个按钮先写说明、再分目录）
   const t1 = Date.now()
-  await mgr.click(buttonStarting('生成说明'))
+  await mgr.click(button('生成方案'))
   await mgr.waitFor('document.querySelector(".content progress")', 20000)
   await sleep(2000)
   shot('describing')
-  // 跑完的标志：进度条没了、「生成方案」又能点了（「生成说明」可能还剩几条没写成，照样能点，不能拿它判断）
-  await mgr.waitFor(`(() => { const b = ${button('生成方案')}; return !!b && !b.disabled && !document.querySelector('.content progress') })()`, 15 * 60000)
-  const leftover = await mgr.evaluate(`(${buttonStarting('生成说明')})?.textContent.replace(/\\D/g, '') || '0'`)
-  const failNote = await mgr.evaluate(`[...document.querySelectorAll('.content .panel p.secondary')].map((p) => p.textContent.trim()).join(' ')`)
-  if (Number(leftover)) info(`说明还剩 ${leftover} 条没写成（界面提示「${failNote}」，可以再点一次「生成说明」补）`)
-  const described = await mgr.evaluate(`window.__bt.workflow.getMeta().then((m) => Object.values(m).filter((x) => x.desc).length)`)
-  const t2 = Date.now()
-  await mgr.click(button('生成方案'))
-  await mgr.waitFor('document.querySelector(".applybar")', 15 * 60000)
+  await mgr.waitFor('document.querySelector(".applybar")', 30 * 60000)
   await sleep(1000)
+  const failNote = await mgr.evaluate(`[...document.querySelectorAll('.content .panel p.secondary')].map((p) => p.textContent.trim()).join(' ')`)
+  if (failNote) info(`整理页提示「${failNote}」`)
+  const described = await mgr.evaluate(`window.__bt.workflow.getMeta().then((m) => Object.values(m).filter((x) => x.desc).length)`)
   const usage = await mgr.evaluate(`[...document.querySelectorAll('.content .secondary')].map((x) => x.textContent.trim()).find((t) => t.startsWith('token')) || ''`)
   const planLine = await mgr.evaluate(`document.querySelector('.applybar .grow').textContent.trim()`)
   shot('plan')
-  record('说明和方案', described >= 380 && !!planLine, `点「生成说明」${Math.round((t2 - t1) / 1000)} 秒，${described} 条有说明；点「生成方案」${Math.round((Date.now() - t2) / 1000)} 秒，底部条「${planLine}」；${usage}`)
+  record('说明和方案', described >= 380 && !!planLine, `点「生成方案」${Math.round((Date.now() - t1) / 1000)} 秒（先写说明再分目录），${described} 条有说明；底部条「${planLine}」；${usage}`)
   const fp1 = fingerprint(await mgr.evaluate(TREE))
   record('E1', fp1 === fp0, `生成方案前后书签树指纹 ${fp0} / ${fp1}`)
 

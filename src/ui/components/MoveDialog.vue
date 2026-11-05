@@ -1,9 +1,8 @@
 <script setup lang="ts">
 // 移动到：书签栏下前两层的文件夹，或新建一个。卡片上的「移动」和待处理里的「新建文件夹…」共用
 import { computed, nextTick, ref, watch } from 'vue'
-import { choices, lockedIds, moveTo, roots, state } from '../state'
+import { choices, lockedIds, moveTo, NEW_FOLDER as NEW, roots, state } from '../state'
 
-const NEW = '__new'
 const dlg = ref<HTMLDialogElement>()
 const nameInput = ref<HTMLInputElement>()
 const target = ref('')
@@ -27,9 +26,9 @@ watch(
       if (dlg.value?.open) dlg.value.close()
       return
     }
-    // 默认选它现在所在的文件夹（在选项里的话），新建时直接到名称
+    // 默认选它现在所在的文件夹（在选项里的话）；不在选项里就空着，你自己选（不替你选第一个）；新建时直接到名称
     const current = books.value[0]?.parentId
-    target.value = m.newFolder ? NEW : choices.value.some((c) => c.id === current) ? current! : (choices.value[0]?.id ?? NEW)
+    target.value = m.newFolder ? NEW : choices.value.some((c) => c.id === current) ? current! : ''
     name.value = ''
     parent.value = roots.value.bar?.id ?? ''
     await nextTick()
@@ -44,7 +43,13 @@ async function submit() {
   state.moving = null
   const title = name.value.trim()
   if (target.value === NEW) await moveTo(m.ids, { newFolder: { parentId: parent.value, title } }, title)
-  else await moveTo(m.ids, { folderId: target.value }, choices.value.find((c) => c.id === target.value)!.path)
+  // 对话框开着时书签树可能刷新过：找不到选项就用 id（workflow 里会再查锁定、文件夹还在不在）
+  else await moveTo(m.ids, { folderId: target.value }, choices.value.find((c) => c.id === target.value)?.path ?? target.value)
+}
+
+/** 输入法正在选字时按的回车不提交 */
+function onEnter(e: KeyboardEvent) {
+  if (!e.isComposing) void submit()
 }
 </script>
 
@@ -55,6 +60,7 @@ async function submit() {
     <label class="field">
       <span>放到</span>
       <select v-model="target">
+        <option value="" disabled>放到…</option>
         <option v-for="c in choices" :key="c.id" :value="c.id">{{ c.path }}</option>
         <option :value="NEW">新建文件夹…</option>
       </select>
@@ -62,7 +68,7 @@ async function submit() {
     <template v-if="target === NEW">
       <label class="field">
         <span>名称</span>
-        <input ref="nameInput" v-model="name" type="text" maxlength="40" @keydown.enter="submit" />
+        <input ref="nameInput" v-model="name" type="text" maxlength="40" @keydown.enter="onEnter" />
       </label>
       <label class="field">
         <span>放在</span>

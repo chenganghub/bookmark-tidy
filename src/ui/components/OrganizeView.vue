@@ -79,12 +79,14 @@ async function generate() {
     const r = await workflow().buildPlan(options.value, (p) => (progress.value = p), ctrl.signal)
     plan.value = r.plan
     usage.value = r.usage
+    // 说明没写成的照样按标题分了；告诉你有几条，再点一次「生成方案」会补
+    if (r.describeFailed) error.value = `${r.describeFailed} 条说明没写成，再生成一次会补`
+    // 先补了说明：卡片上的说明跟着刷新
+    state.meta = await workflow().getMeta()
   } catch (e) {
     error.value = errorText(e)
   } finally {
     running.value = ''
-    // 生成方案时先补了说明：卡片上的说明跟着刷新
-    state.meta = await workflow().getMeta()
   }
 }
 
