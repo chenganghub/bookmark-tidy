@@ -452,6 +452,9 @@ describe('bookmark-ux：待处理和手动操作', () => {
     const { usage, describeFailed } = await wf.buildPlan(planOptions(), (p) => void (stages.at(-1) !== p.stage && stages.push(p.stage)))
     expect(stages[0]).toBe('describe')
     expect(seen[0].stage).toBe('describe')
+    // 先写说明再出方案：写说明的请求全在设计目录、归类的请求之前
+    expect(stages.slice(0, 3)).toEqual(['describe', 'taxonomy', 'classify'])
+    expect(seen.findLastIndex((s) => s.stage === 'describe')).toBeLessThan(seen.findIndex((s) => s.stage === 'taxonomy'))
     expect(usage.requests).toBe(seen.length)
     expect(describeFailed).toBe(0)
     const n = seen.length

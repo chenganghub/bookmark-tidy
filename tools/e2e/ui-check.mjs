@@ -236,6 +236,23 @@ try {
   await page.screenshot(shot('edit-light'))
   await page.evaluate(`document.querySelector('dialog[open]').close()`)
 
+  // M1 键盘聚焦：焦点在卡片（列表行）的链接上按一次 Tab，进到它的「移动」按钮，三个按钮淡入（:focus-within）。
+  // 鼠标先挪到顶栏，确认是聚焦让它出现的，不是悬停
+  const tabIntoOps = async (wrap) => {
+    await page.hover('document.querySelector(".topbar")')
+    await sleep(250)
+    const ops = JSON.stringify(`${wrap} .card-ops`)
+    const before = await page.evaluate(`getComputedStyle(document.querySelector(${ops})).opacity`)
+    await page.evaluate(`(document.querySelector(${JSON.stringify(`${wrap} > a`)}).focus(), true)`)
+    for (const type of ['rawKeyDown', 'keyUp']) await page.send('Input.dispatchKeyEvent', { type, key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 })
+    await sleep(250)
+    const after = await page.evaluate(`(() => { const o = document.querySelector(${ops}); return { focused: document.activeElement?.getAttribute('aria-label') ?? '', inside: o.contains(document.activeElement), opacity: getComputedStyle(o).opacity, labels: [...o.querySelectorAll('button')].map((b) => b.getAttribute('aria-label')).join() } })()`)
+    await page.evaluate(`(document.activeElement?.blur(), true)`)
+    return { before, ...after }
+  }
+  const cardKey = await tabIntoOps('.grid .card-wrap')
+  expect(cardKey.before === '0' && cardKey.focused === '移动' && cardKey.inside && cardKey.opacity === '1' && cardKey.labels === '移动,删除,编辑', 'M1 键盘：卡片链接上按 Tab 进到「移动」，移动、删除、编辑出现', `鼠标不在卡片上 ${cardKey.before} → 焦点在「${cardKey.focused}」${cardKey.opacity}`)
+
   // M1 卡片上「移动」：对话框选一个文件夹 → 结果条「已放到」带撤销 → 撤销回原处；「删除」→「已删除 1 条」→ 撤销回来
   const firstId = await page.evaluate(`(() => { const t = document.querySelector('.grid .card-wrap .card').getAttribute('title'); return window.__bt.state.flat.bookmarks.find((b) => b.title === t).id })()`)
   const parentOfCard = (id) => page.evaluate(`(async () => (await window.__bt.workflow.loadTree()).flat.bookmarks.find((b) => b.id === ${JSON.stringify(id)})?.parentId ?? null)()`)
@@ -281,6 +298,15 @@ try {
   const inset = await page.evaluate(`getComputedStyle(document.querySelector('.row-wrap .row'), '::after').left`)
   expect(inset === '46px', '分隔线缩进到文字起点', `${inset}（期望 46px）`)
   await page.screenshot(shot('list-light'))
+  // M1 列表行：悬停、键盘聚焦都出现移动、删除、编辑（和卡片同一个组件）
+  const rowBefore = await page.evaluate(`getComputedStyle(document.querySelector('.list .row-wrap .card-ops')).opacity`)
+  await page.hover('document.querySelector(".list .row-wrap")')
+  await sleep(250)
+  const rowHover = await page.evaluate(`(() => { const o = document.querySelector('.list .row-wrap .card-ops'); return { opacity: getComputedStyle(o).opacity, labels: [...o.querySelectorAll('button')].map((b) => b.getAttribute('aria-label')).join() } })()`)
+  expect(rowBefore === '0' && rowHover.opacity === '1' && rowHover.labels === '移动,删除,编辑', 'M1 悬停列表行时出现移动、删除、编辑', `平时 ${rowBefore} → 悬停 ${rowHover.opacity}，${rowHover.labels}`)
+  await page.screenshot(shot('list-hover'))
+  const rowKey = await tabIntoOps('.list .row-wrap')
+  expect(rowKey.before === '0' && rowKey.focused === '移动' && rowKey.inside && rowKey.opacity === '1' && rowKey.labels === '移动,删除,编辑', 'M1 键盘：列表行链接上按 Tab 进到「移动」，移动、删除、编辑出现', `鼠标不在行上 ${rowKey.before} → 焦点在「${rowKey.focused}」${rowKey.opacity}`)
   await page.evaluate(`${button('卡片')}.click()`)
 
   // 设置对话框
@@ -479,9 +505,15 @@ try {
   const stepDescs = await page.evaluate(`[...document.querySelectorAll('.steps .step-head')].map((h) => [...h.querySelectorAll('.secondary')].map((x) => x.textContent.trim()))`)
   expect(stepDescs.length === 4 && stepDescs.every((d) => d.length <= 1 && d.every((t) => [...t].length <= 24)), 'U1 整理页每一步最多一行说明，不超过 24 字', JSON.stringify(stepDescs.map((d) => d.map((t) => `${t}（${[...t].length}）`))))
   await page.screenshot(shot('organize-empty'))
+  // O1 能跳过：这一页没点「抓取网页信息」，直接点「生成方案」，方案照样出来；存着的网页信息条数不变（没抓）
+  const pageInfos = `window.__bt.workflow.getPageInfos().then((p) => Object.keys(p).length)`
+  const infos0 = await page.evaluate(pageInfos)
   await page.evaluate(`${button('生成方案')}.click()`)
   await page.waitFor('document.querySelector(".applybar")', 30000)
   await sleep(300)
+  const infos1 = await page.evaluate(pageInfos)
+  const planItems = await page.evaluate(`window.__bt.workflow.getPlan().then((p) => p?.items.length ?? 0)`)
+  expect(infos1 === infos0 && planItems > 0, 'O1 能跳过：没点「抓取网页信息」直接「生成方案」，方案照样出来，网页信息没有新抓的', `方案 ${planItems} 条；网页信息 ${infos0} → ${infos1} 条`)
   const ORG = [
     ['.applybar', 'position', 'sticky', '应用条吸底'],
     ['.applybar', 'bottom', '0px', '应用条贴底边'],
@@ -670,6 +702,14 @@ try {
   await page.evaluate(`(() => { const s = document.querySelector('.tri .tri-row select'); s.value = '__new'; s.dispatchEvent(new Event('change')); return true })()`)
   await page.waitFor('document.querySelector("dialog[open] input[type=text]")')
   await sleep(250)
+  // M1 卡片上的「移动」打开的就是这个对话框：它的「放到」和这一行的 T3 下拉逐项一样（书签栏下前两层），最后一项都是「新建文件夹…」
+  const sameChoices = await page.evaluate(`(() => {
+    const texts = (s) => [...s.options].filter((o) => o.value).map((o) => o.textContent.replace('（AI 猜的）', '').trim())
+    const row = texts(document.querySelector('.tri .tri-row select'))
+    const dlg = texts(document.querySelector('dialog[open] select'))
+    return { same: JSON.stringify(row) === JSON.stringify(dlg), n: dlg.length, last: dlg.at(-1) }
+  })()`)
+  expect(sameChoices.same && sameChoices.n > 1 && sameChoices.last === '新建文件夹…', 'M1 移动对话框的「放到」和 T3 下拉逐项一样，最后一项「新建文件夹…」', `${sameChoices.n} 项一样，最后一项 ${sameChoices.last}`)
   const parentChoices = await page.evaluate(`[...document.querySelectorAll('dialog[open] select')].at(-1).options.length`)
   await page.screenshot(shot('triage-newfolder'))
   await page.evaluate(`(() => { const i = document.querySelector('dialog[open] input[type=text]'); i.value = '临时收着'; i.dispatchEvent(new Event('input')); return true })()`)

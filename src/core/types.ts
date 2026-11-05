@@ -650,7 +650,7 @@ export interface Workflow {
 
   /** 第一段：给还没有说明（且不是手改过）的书签写说明 */
   describe(onProgress: (p: StageProgress) => void, signal?: AbortSignal): Promise<{ usage: AiUsage; failedIds: string[] }>
-  /** 先给参与整理、还没有说明的写说明（describeFailed 是没写成的条数），再第二、三段 + 生成方案 */
+  /** 先给还没有说明的写说明（和 describe 同一个范围，plan.ts 的 describeScope；describeFailed 是没写成的条数），再第二、三段 + 生成方案 */
   buildPlan(options: PlanOptions, onProgress: (p: StageProgress) => void, signal?: AbortSignal): Promise<{ plan: Plan; usage: AiUsage; issues: string[]; describeFailed: number }>
   getPlan(): Promise<Plan | undefined>
   savePlan(plan: Plan): Promise<void>

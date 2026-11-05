@@ -728,24 +728,30 @@ describe('bookmark-ux：角标的 N、待处理的 M', () => {
     expect(queue).toEqual([control.id])
   })
 
-  it('T7 删了又撤销：重建出来的添加时间是新的，也不当新收藏算进 N；根下散放的删之前就算，撤销后 N 和删之前一样', async () => {
+  it('T7 删了又撤销：重建出来的添加时间是新的，也不当新收藏算进 N；其他书签、移动设备书签根下散放的删之前就算，撤销后 N 和删之前一样', async () => {
     const t = await setup()
     const wf = createWorkflow({ bookmarks: t.bm, kv: t.kv, lock: t.lock, now: () => T0, permissions: { contains: async () => true, request: async () => true }, bookmarkEvents: { subscribe: () => () => {} } })
     const filed = await t.bm.create({ parentId: 'FV', title: '整理前就放好的', url: 'https://x.com/filed' })
     const loose = await t.bm.create({ parentId: '2', title: '其他书签根下散放的', url: 'https://x.com/loose' })
-    // 一期应用在这两条之后完成：之后加的、没有说明的才算新收藏
-    await t.store.saveLog({ ...doneLog(), startedAt: loose.dateAdded! })
-    expect((await t.filer.status()).unfiled).toBe(1)
-    const change = await wf.removeBookmarks([filed.id, loose.id])
-    expect((await t.filer.status()).unfiled).toBe(0)
+    const mobile = await t.bm.create({ parentId: '3', title: '移动设备书签根下散放的', url: 'https://x.com/mobile' })
+    // 一期应用在这三条之后完成：之后加的、没有说明的才算新收藏
+    await t.store.saveLog({ ...doneLog(), startedAt: mobile.dateAdded! })
+    const counted = async () => (await t.filer.unfiled()).map((b) => b.id)
+    expect(await counted()).toEqual([loose.id, mobile.id])
+    expect((await t.filer.status()).unfiled).toBe(2)
+    const change = await wf.removeBookmarks([filed.id, loose.id, mobile.id])
+    expect(await counted()).toEqual([])
     await wf.revertChange(change)
     const [rebuilt] = await t.bm.get(change.rebuilt[filed.id])
     expect(rebuilt).toMatchObject({ parentId: 'FV', title: '整理前就放好的', url: 'https://x.com/filed' })
-    expect(rebuilt.dateAdded).toBeGreaterThan(loose.dateAdded!)
-    expect((await t.filer.status()).unfiled).toBe(1)
+    expect(rebuilt.dateAdded).toBeGreaterThan(mobile.dateAdded!)
+    // 撤销后：根下散放的两条（新 id）回到 N 里，文件夹里重建的那条不算；N 和删之前一样是 2
+    expect(await counted()).toEqual([change.rebuilt[loose.id], change.rebuilt[mobile.id]])
+    expect((await t.bm.get(change.rebuilt[mobile.id]))[0].parentId).toBe('3')
+    expect((await t.filer.status()).unfiled).toBe(2)
     // 对照：同样是整理之后加进来、没有说明的普通书签，算新收藏
     await t.bm.create({ parentId: 'FV', title: '对照：普通的新书签', url: 'https://x.com/new' })
-    expect((await t.filer.status()).unfiled).toBe(2)
+    expect((await t.filer.status()).unfiled).toBe(3)
   })
 
   it('T11 收藏即整理、一键整理（直接放、预览、撤销这次）都不删书签', async () => {
