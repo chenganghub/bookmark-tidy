@@ -747,6 +747,7 @@ describe('bookmark-ux：角标的 N、待处理的 M', () => {
     expect(rebuilt.dateAdded).toBeGreaterThan(mobile.dateAdded!)
     // 撤销后：根下散放的两条（新 id）回到 N 里，文件夹里重建的那条不算；N 和删之前一样是 2
     expect(await counted()).toEqual([change.rebuilt[loose.id], change.rebuilt[mobile.id]])
+    expect((await t.bm.get(change.rebuilt[loose.id]))[0].parentId).toBe('2')
     expect((await t.bm.get(change.rebuilt[mobile.id]))[0].parentId).toBe('3')
     expect((await t.filer.status()).unfiled).toBe(2)
     // 对照：同样是整理之后加进来、没有说明的普通书签，算新收藏

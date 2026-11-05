@@ -261,6 +261,9 @@ try {
   await page.waitFor('document.querySelector("dialog[open] select")')
   await sleep(250)
   await page.screenshot(shot('move-dialog'))
+  // 卡片上打开的「放到」选项，下面列表行上打开的要和它逐项一样
+  const dialogChoices = `[...document.querySelector('dialog[open] select').options].filter((o) => o.value).map((o) => o.textContent.trim())`
+  const cardChoices = await page.evaluate(dialogChoices)
   // 打开时预选它现在所在的文件夹（在前两层里的话）；「放到…」占位（值为空、不能选）和「新建文件夹…」不算
   const moveDefault = await page.evaluate(`document.querySelector('dialog[open] select').value`)
   const moveTo = await page.evaluate(`(() => { const s = document.querySelector('dialog[open] select'); const o = [...s.options].find((x) => x.value && x.value !== s.value && x.value !== '__new'); s.value = o.value; s.dispatchEvent(new Event('change')); return { id: o.value, path: o.textContent.trim() } })()`)
@@ -307,6 +310,37 @@ try {
   await page.screenshot(shot('list-hover'))
   const rowKey = await tabIntoOps('.list .row-wrap')
   expect(rowKey.before === '0' && rowKey.focused === '移动' && rowKey.inside && rowKey.opacity === '1' && rowKey.labels === '移动,删除,编辑', 'M1 键盘：列表行链接上按 Tab 进到「移动」，移动、删除、编辑出现', `鼠标不在行上 ${rowKey.before} → 焦点在「${rowKey.focused}」${rowKey.opacity}`)
+  // M1 列表行的「移动」：打开同一个对话框，「放到」和卡片上打开的逐项一样（最后一项「新建文件夹…」）；移过去，结果条撤销回原处
+  const undoBar = `[...document.querySelectorAll('.bar .link')].find((b) => b.textContent.trim() === '撤销').click()`
+  const rowId = await page.evaluate(`(() => { const t = document.querySelector('.list .row-wrap .row').getAttribute('title'); return window.__bt.state.flat.bookmarks.find((b) => b.title === t).id })()`)
+  const rowFrom = await parentOfCard(rowId)
+  await page.evaluate(`window.__bt.state.notice = null`)
+  await page.evaluate(`document.querySelector('.list .row-wrap .card-ops [aria-label="移动"]').click()`)
+  await page.waitFor('document.querySelector("dialog[open] select")')
+  await sleep(250)
+  const rowChoices = await page.evaluate(dialogChoices)
+  const rowTo = await page.evaluate(`(() => { const s = document.querySelector('dialog[open] select'); const o = [...s.options].find((x) => x.value && x.value !== s.value && x.value !== '__new'); s.value = o.value; s.dispatchEvent(new Event('change')); return { id: o.value, path: o.textContent.trim() } })()`)
+  await page.evaluate(`document.querySelector('dialog[open] .btn-primary').click()`)
+  await page.waitFor(`window.__bt.state.notice?.text.startsWith('已放到') && !window.__bt.state.busy`)
+  const rowMoved = await page.evaluate(`document.querySelector('.bar .grow').textContent.trim()`)
+  const rowMovedParent = await parentOfCard(rowId)
+  await page.evaluate(undoBar)
+  await page.waitFor(`window.__bt.state.notice?.text === '已撤销' && !window.__bt.state.busy`)
+  const rowBack = (await parentOfCard(rowId)) === rowFrom
+  expect(JSON.stringify(rowChoices) === JSON.stringify(cardChoices) && rowChoices.at(-1) === '新建文件夹…', 'M1 列表行「移动」打开同一个对话框，「放到」和卡片上的逐项一样，最后一项「新建文件夹…」', `${rowChoices.length} 项一样，最后一项 ${rowChoices.at(-1)}`)
+  expect(rowMoved === `已放到「${rowTo.path}」` && rowMovedParent === rowTo.id && rowBack, 'M1 列表行「移动」：放进选的文件夹，结果条能撤销回原处', `${rowMoved}；撤销后回到原文件夹 ${rowBack}`)
+  // M1 列表行的「删除」：结果条「已删除 1 条」，撤销后回来
+  const rowTotal0 = await page.evaluate(`window.__bt.state.flat.bookmarks.length`)
+  await page.evaluate(`window.__bt.state.notice = null`)
+  await page.evaluate(`document.querySelector('.list .row-wrap .card-ops [aria-label="删除"]').click()`)
+  await page.waitFor(`window.__bt.state.notice?.text.startsWith('已删除') && !window.__bt.state.busy`)
+  const rowDel = await page.evaluate(`document.querySelector('.bar .grow').textContent.trim()`)
+  const rowTotal1 = await page.evaluate(`window.__bt.state.flat.bookmarks.length`)
+  await page.evaluate(undoBar)
+  await page.waitFor(`window.__bt.state.notice?.text === '已撤销' && !window.__bt.state.busy`)
+  const rowTotal2 = await page.evaluate(`window.__bt.state.flat.bookmarks.length`)
+  expect(rowDel === '已删除 1 条' && rowTotal1 === rowTotal0 - 1 && rowTotal2 === rowTotal0, 'M1 列表行「删除」：结果条「已删除 1 条」，撤销后回来', `${rowDel}；${rowTotal0} → ${rowTotal1} → ${rowTotal2}`)
+  await page.evaluate(`window.__bt.state.notice = null`)
   await page.evaluate(`${button('卡片')}.click()`)
 
   // 设置对话框
