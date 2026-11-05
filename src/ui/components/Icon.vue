@@ -15,6 +15,7 @@ export type IconName =
   | 'chevron'
   | 'eye'
   | 'minus'
+  | 'move'
 
 defineProps<{ name: IconName; size?: number }>()
 
@@ -35,7 +36,9 @@ const paths: Record<IconName, string[]> = {
   trash: ['M4.5 7h15', 'M9.5 7V4.5h5V7', 'M6.5 7l1 13h9l1-13'],
   chevron: ['M9.5 6l6 6-6 6'],
   eye: ['M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z'],
-  minus: ['M6 12h12']
+  minus: ['M6 12h12'],
+  // 文件夹里一个向右的箭头：移到别的文件夹
+  move: ['M3.5 7.5A1.5 1.5 0 0 1 5 6h4.2l2 2H19a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z', 'M8.5 13.5h6.5', 'M12.5 11l2.5 2.5-2.5 2.5']
 }
 </script>
 

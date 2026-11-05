@@ -228,6 +228,12 @@ p {
   filter: none;
 }
 
+/* 按钮文字后面的数（顶栏「待处理 15」）：同色、淡一些，选中时跟着变主色 */
+.btn-n {
+  margin-left: 6px;
+  opacity: 0.6;
+}
+
 .btn-icon {
   width: 32px;
   padding: 0;
@@ -493,19 +499,24 @@ progress {
   margin-right: auto;
 }
 
-.card-edit {
+/* 卡片和列表行的移动、删除、编辑：悬停或键盘聚焦时淡入；底色和悬停时的卡片一样，盖住标题的尾巴 */
+.card-ops {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 28px;
-  height: 28px;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background-color: var(--surface);
+  background-image: linear-gradient(var(--fill-hover), var(--fill-hover));
   opacity: 0;
-  transition: opacity var(--t), background-color var(--t);
+  transition: opacity var(--t);
 }
 
-.card-wrap:hover .card-edit,
-.row-wrap:hover .card-edit,
-.card-edit:focus-visible {
+.card-wrap:hover .card-ops,
+.row-wrap:hover .card-ops,
+.card-ops:focus-within {
   opacity: 1;
 }
 
@@ -562,8 +573,8 @@ progress {
   color: var(--secondary);
 }
 
-.row-wrap .card-edit {
-  top: 8px;
+.row-wrap .card-ops {
+  top: 6px;
   right: 8px;
 }
 
@@ -886,7 +897,8 @@ details.group[open] > summary .icon {
 }
 
 .item:hover .move,
-.item:focus-within .move {
+.item:focus-within .move,
+.item .move.always {
   opacity: 1;
 }
 
@@ -1007,6 +1019,12 @@ dialog .actions {
   color: var(--secondary);
 }
 
+.field select {
+  width: 100%;
+  height: 32px;
+  font-size: 13px;
+}
+
 /* 输入框右端的图标按钮（显示 key）：放在框里，所有输入框右边对齐 */
 .input-wrap {
   position: relative;
@@ -1041,6 +1059,166 @@ dialog .actions {
   .search {
     width: 200px;
   }
+}
+
+/* ---------------------------------------------------------------- 待处理、整理页的步骤（bookmark-ux） */
+
+.tri {
+  margin-bottom: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.tri-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.tri-title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.tri-n {
+  color: var(--secondary);
+}
+
+.tri-head .tri-all {
+  margin-left: auto;
+}
+
+.tri-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--secondary);
+}
+
+.tri-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.tri-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 4px 0;
+  border-top: 1px solid var(--separator);
+}
+
+.tri-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  color: inherit;
+  text-decoration: none;
+}
+
+.tri-name,
+.tri-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tri-sub {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--secondary);
+}
+
+.tri-move {
+  flex: none;
+  width: 200px;
+}
+
+.tri-del {
+  flex: none;
+  color: var(--secondary);
+}
+
+.tri-del:hover {
+  color: var(--label);
+}
+
+.tri-check {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.tri-more {
+  margin: 8px 0 0 -4px;
+}
+
+.tri-more .tri-list {
+  margin-left: 4px;
+}
+
+.tri-audit {
+  margin: 24px 0 0 -4px;
+}
+
+.tri-audit > .disclose + * {
+  margin: 12px 0 0 4px;
+}
+
+.steps {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.step {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--separator);
+}
+
+.step:last-child {
+  padding-bottom: 0;
+}
+
+.step-n {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+}
+
+.step-body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.step-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.step-title {
+  font-weight: 600;
 }
 
 /* ---------------------------------------------------------------- 工具栏弹窗（二期） */

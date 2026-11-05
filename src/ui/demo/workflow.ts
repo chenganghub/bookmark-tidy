@@ -51,7 +51,8 @@ const demoChat: ChatJsonFn = async (messages) => {
   const items = rows.map(([id, ...rest]) => {
     const text = rest.join(' ')
     const hit = RULES.find(([re]) => re.test(text))
-    return { id, path: hit?.[1] ?? '', confidence: hit ? 0.92 : 0.3 }
+    // 没命中的给一个把握很低的猜测：进待整理，待处理里能看到「AI 猜的」
+    return { id, path: hit?.[1] ?? '学习资料', confidence: hit ? 0.92 : 0.3 }
   })
   return { data: { items }, usage }
 }

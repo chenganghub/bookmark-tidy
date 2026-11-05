@@ -23,13 +23,22 @@ const targets = computed(() => [
   { key: INBOX, label: INBOX_NAME },
   { key: CLEANUP, label: CLEANUP_NAME }
 ])
-const groups = computed(() => targets.value.map((t) => ({ ...t, items: props.plan.items.filter((i) => i.target === t.key) })).filter((g) => g.items.length))
+/** 待整理、待清理：要你拿主意的，清单里排最前、默认展开，「放到」一直显示 */
+const isSpecial = (key: string) => key === INBOX || key === CLEANUP
+const groups = computed(() =>
+  [...targets.value.filter((t) => isSpecial(t.key)), ...targets.value.filter((t) => !isSpecial(t.key))]
+    .map((t) => ({ ...t, items: props.plan.items.filter((i) => i.target === t.key) }))
+    .filter((g) => g.items.length)
+)
 
-// 只渲染展开的分组，400 条也不卡；新方案默认展开前 3 组
+// 只渲染展开的分组，400 条也不卡；新方案默认展开待整理、待清理和第一个目录
 const open = ref(new Set<string>())
 watch(
   () => props.plan.id,
-  () => (open.value = new Set(groups.value.slice(0, 3).map((g) => g.key))),
+  () => {
+    const first = groups.value.find((g) => !isSpecial(g.key))
+    open.value = new Set([...groups.value.filter((g) => isSpecial(g.key)).map((g) => g.key), ...(first ? [first.key] : [])])
+  },
   { immediate: true }
 )
 function onToggle(key: string, e: Event) {
@@ -122,7 +131,7 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked
             <div>{{ finalTitle(it, it.base.title) }}</div>
             <div v-if="finalTitle(it, it.base.title) !== it.base.title" class="old">{{ it.base.title }}</div>
           </div>
-          <select class="move" :value="it.target" aria-label="放到" title="放到" @change="emit('update', setItemTarget(plan, it.bookmarkId, ($event.target as HTMLSelectElement).value))">
+          <select class="move" :class="{ always: isSpecial(g.key) }" :value="it.target" aria-label="放到" title="放到" @change="emit('update', setItemTarget(plan, it.bookmarkId, ($event.target as HTMLSelectElement).value))">
             <option v-for="t in targets" :key="t.key" :value="t.key">{{ t.label }}</option>
           </select>
           <div class="row-gap">

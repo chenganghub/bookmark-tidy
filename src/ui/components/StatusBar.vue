@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { errorText } from '../format'
-import { applyNotice, reload, state, undoNotice, workflow } from '../state'
+import { applyNotice, reload, revertManual, state, undoNotice, workflow } from '../state'
 import Icon from './Icon.vue'
 
 const running = ref(false)
@@ -60,6 +60,7 @@ const resume = (applyId: string) => run(async () => void (state.notice = applyNo
       <button v-if="state.notice.details?.length" class="link" type="button" @click="showDetails = !showDetails">{{ showDetails ? '收起' : '详情' }}</button>
       <button v-if="state.notice.kind === 'applied' && state.notice.applyId" class="link" type="button" @click="undo(state.notice.applyId)">撤销</button>
       <button v-if="state.notice.kind === 'error' && state.notice.applyId" class="link" type="button" @click="undo(state.notice.applyId)">撤销</button>
+      <button v-if="state.notice.kind === 'manual' && state.notice.change" class="link" type="button" :disabled="state.busy" @click="revertManual">撤销</button>
       <button class="btn btn-icon btn-small" type="button" aria-label="关闭" @click="state.notice = null"><Icon name="close" :size="14" /></button>
     </div>
     <div v-if="showDetails && state.notice.details?.length" class="list" style="margin: -8px 0 16px">

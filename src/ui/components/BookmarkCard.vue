@@ -4,7 +4,7 @@ import { cleanTitle } from '../../core/rules'
 import type { FlatBookmark } from '../../core/types'
 import { faviconUrl, hostOf, initialOf, yearMonth } from '../format'
 import { badgeText, badgesOf, state } from '../state'
-import Icon from './Icon.vue'
+import CardOps from './CardOps.vue'
 
 const props = defineProps<{ b: FlatBookmark }>()
 
@@ -31,8 +31,6 @@ const badges = computed(() => badgesOf(props.b))
         <span v-for="x in badges" :key="x" class="badge">{{ badgeText[x] }}</span>
       </div>
     </a>
-    <button class="btn btn-icon card-edit" type="button" aria-label="编辑" @click="state.editingId = b.id">
-      <Icon name="pencil" :size="14" />
-    </button>
+    <CardOps :id="b.id" />
   </div>
 </template>

@@ -1,6 +1,6 @@
 // 界面用的小工具：格式化、文案映射。文案短，2～6 个字。
 import { browser } from 'wxt/browser'
-import type { ApplyReport, FetchStatus, PlanItemReason, SkipReason } from '../core/types'
+import type { ApplyReport, CleanupReason, FetchStatus, PlanItemReason, SkipReason } from '../core/types'
 import { isDemo } from './useWorkflow'
 
 export function hostOf(url: string): string {
@@ -90,4 +90,12 @@ export const applySkipText: Record<ApplyReport['skipped'][number]['reason'], str
   'url-changed': '网址变了',
   locked: '在锁定目录',
   'changed-during-apply': '应用时被改'
+}
+
+/** 待处理「建议删除」每条的原因 */
+export function cleanupReasonText(r: CleanupReason): string {
+  if (r.kind === 'dead') return r.httpStatus ? `失效 · 打开是 ${r.httpStatus}` : '失效'
+  if (r.kind === 'duplicate') return `重复 · 另一条在「${r.otherPath}」`
+  if (r.kind === 'unreachable') return '连不上'
+  return '原因已经不在了'
 }

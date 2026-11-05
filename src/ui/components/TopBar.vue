@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { saveSettings, state, toggleView, type Layout } from '../state'
+import { pendingN, saveSettings, state, toggleView, type Layout } from '../state'
 import Icon from './Icon.vue'
 
 const input = ref<HTMLInputElement>()
@@ -43,7 +43,8 @@ function setLayout(l: Layout) {
       <button type="button" :aria-pressed="state.layout === 'cards'" @click="setLayout('cards')">卡片</button>
       <button type="button" :aria-pressed="state.layout === 'list'" @click="setLayout('list')">列表</button>
     </div>
-    <button class="btn" type="button" :aria-pressed="state.view === 'audit'" @click="toggleView('audit')">体检</button>
+    <!-- 后面的数：拿不准放哪 + 建议删除的条数，没有时不写 -->
+    <button class="btn" type="button" :aria-pressed="state.view === 'triage'" @click="toggleView('triage')">待处理<span v-if="pendingN" class="btn-n">{{ pendingN }}</span></button>
     <button class="btn btn-primary" type="button" :aria-pressed="state.view === 'organize'" @click="toggleView('organize')">整理</button>
     <button class="btn btn-icon" type="button" aria-label="设置" @click="state.settingsOpen = true">
       <Icon name="gear" />

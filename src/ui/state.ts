@@ -2,21 +2,31 @@
 import { computed, nextTick, reactive } from 'vue'
 import { effectiveLockedIds, specialFolders } from '../core/plan'
 import { pickRoot } from '../core/tree'
-import type { ApplyLog, AuditIssues, AuditSummary, BookmarkMeta, FlatBookmark, FlatFolder, FlatTree, PageInfo, Settings, UndoReport, Workflow } from '../core/types'
-import { applySkipText, errorText } from './format'
+import { folderChoices } from '../core/triage'
+import type { ApplyLog, AuditIssues, AuditSummary, BookmarkMeta, FlatBookmark, FlatFolder, FlatTree, ManualChange, MoveTarget, PageInfo, Settings, Triage, UndoReport, Workflow } from '../core/types'
+import { applySkipText, downloadText, errorText, stampForFile } from './format'
 import { getWorkflow, params } from './useWorkflow'
 
-export type View = 'browse' | 'audit' | 'organize'
+/** triage：待处理（拿不准放哪、建议删除、空文件夹，底下是原来的体检） */
+export type View = 'browse' | 'triage' | 'organize'
 export type Layout = 'cards' | 'list'
 export type SortKey = 'added' | 'used' | 'title'
 export type FilterKey = 'cold' | 'duplicate' | 'login' | 'dead' | 'inbox'
 export type Badge = 'dead' | 'unreachable' | 'login' | 'duplicate' | 'cold' | 'recent'
 
 export interface Notice {
-  kind: 'applied' | 'undone' | 'restored' | 'error'
+  kind: 'applied' | 'undone' | 'restored' | 'error' | 'manual'
   text: string
   applyId?: string
   details?: string[]
+  /** kind 是 manual：这次移动或删除，「撤销」用 */
+  change?: ManualChange
+}
+
+/** 移动对话框：要移的书签；newFolder 打开时直接是「新建文件夹」 */
+export interface Moving {
+  ids: string[]
+  newFolder: boolean
 }
 
 export const state = reactive({
@@ -37,6 +47,8 @@ export const state = reactive({
   sort: 'added' as SortKey,
   settingsOpen: false,
   editingId: '',
+  moving: null as Moving | null,
+  triage: null as Triage | null,
   notice: null as Notice | null,
   /** 应用 / 撤销进行中：书签事件很多，先不跟着刷新 */
   busy: false
@@ -62,7 +74,7 @@ export async function init() {
     state.layout = s.view
     applyTheme(params.get('theme') ?? s.theme)
     const v = params.get('view')
-    if (v === 'audit' || v === 'organize') state.view = v
+    if (v === 'triage' || v === 'organize') state.view = v
     // 地址栏「s 关键词」回车、弹窗里搜不到时带着搜索词打开管理页
     state.query = params.get('q') ?? ''
     await reload()
@@ -87,7 +99,7 @@ export async function init() {
 
 export async function reload() {
   const w = workflow()
-  const [{ flat }, a, meta, pages, settings, latest] = await Promise.all([w.loadTree(), w.audit(), w.getMeta(), w.getPageInfos(), w.getSettings(), w.getLatestApply()])
+  const [{ flat }, a, meta, pages, settings, latest, triage] = await Promise.all([w.loadTree(), w.audit(), w.getMeta(), w.getPageInfos(), w.getSettings(), w.getLatestApply(), w.triage()])
   state.flat = flat
   state.summary = a.summary
   state.issues = a.issues
@@ -95,6 +107,7 @@ export async function reload() {
   state.pages = pages
   state.settings = settings
   state.latest = latest
+  state.triage = triage
   if (state.folderId && !flat.folders.some((f) => f.id === state.folderId)) state.folderId = ''
 }
 
@@ -115,6 +128,11 @@ export const roots = computed(() => {
 })
 
 export const lockedIds = computed(() => new Set(state.flat && state.settings ? effectiveLockedIds(state.flat, state.settings) : []))
+
+/** 「放到」的选项：书签栏下前两层、不含锁定的 */
+export const choices = computed(() => (state.flat ? folderChoices(state.flat, lockedIds.value) : []))
+/** 顶栏「待处理」后面的数：拿不准放哪 + 建议删除（空文件夹不算） */
+export const pendingN = computed(() => (state.triage ? state.triage.unsure.length + state.triage.cleanup.length : 0))
 
 const inboxId = computed(() => (state.flat && roots.value.other ? specialFolders(state.flat, roots.value.other.id).inbox : undefined))
 const dupSet = computed(() => new Set((state.issues?.duplicateGroups ?? []).flatMap((g) => g.slice(1))))
@@ -232,4 +250,50 @@ export function restoreNotice(r: UndoReport, kind: 'undone' | 'restored' = 'rest
   if (r.rebuilt.length) parts.push(`重建 ${r.rebuilt.length}`)
   if (kept.length) parts.push(`保留 ${kept.length}`)
   return { kind, text: parts.join(' · '), details: [...r.rebuilt.map((x) => `${x.title} · 重建`), ...kept.map((id) => `${titleOf(id)} · 保留`)] }
+}
+
+// ---------------------------------------------------------------- 待处理和卡片上的移动、删除（bookmark-ux）
+
+const withSkipped = (text: string, skipped: number) => (skipped ? `${text} · 跳过 ${skipped}` : text)
+
+/** 一次手动操作：同一时刻只做一件（应用、撤销进行中也不做）；做完刷新，结果条带「撤销」 */
+async function manual(run: () => Promise<ManualChange>, text: (c: ManualChange) => string) {
+  if (state.busy) return
+  state.busy = true
+  try {
+    const change = await run()
+    state.notice = { kind: 'manual', text: withSkipped(text(change), change.skipped), change }
+  } catch (e) {
+    state.notice = { kind: 'error', text: errorText(e) }
+  } finally {
+    state.busy = false
+    await reload()
+  }
+}
+
+export const moveTo = (ids: string[], target: MoveTarget, label: string) => manual(() => workflow().moveBookmarks(ids, target), () => `已放到「${label}」`)
+
+/** 删书签；backup 时先下载整棵树的备份（批量删用） */
+export const removeMarks = (ids: string[], backup = false) =>
+  manual(
+    () => workflow().removeBookmarks(ids, backup ? (json) => downloadText(json, `书签备份-${stampForFile()}.json`) : undefined),
+    (c) => `已删除 ${c.removed.length} 条`
+  )
+
+export const removeEmpty = (ids: string[]) => manual(() => workflow().removeFolders(ids), (c) => `已删除 ${c.removed.length} 个空文件夹`)
+
+/** 结果条上的「撤销」；撤销到一半出错时留着这次的记录，再点一次从断点接着做 */
+export async function revertManual() {
+  const change = state.notice?.change
+  if (!change || state.busy) return
+  state.busy = true
+  try {
+    const r = await workflow().revertChange(change)
+    state.notice = { kind: 'manual', text: withSkipped('已撤销', r.skipped) }
+  } catch (e) {
+    state.notice = { kind: 'manual', text: `撤销没做完：${errorText(e)}`, change }
+  } finally {
+    state.busy = false
+    await reload()
+  }
 }

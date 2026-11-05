@@ -1,11 +1,12 @@
 <script setup lang="ts">
+// 整理页：按 ① 抓取网页信息（能跳过）② 生成方案（先给没有说明的写说明）③ 检查方案 ④ 应用 排列（bookmark-ux O1）
 import { computed, onMounted, ref, watch } from 'vue'
 import { participants, planStats, reusedFolders } from '../../core/plan'
 import type { AiUsage, Plan, PlanOptions, StageProgress } from '../../core/types'
 import { downloadText, errorText, money, stampForFile } from '../format'
 import { applyNotice, lockedIds, reload, roots, saveSettings, state, workflow } from '../state'
 import { isDemo } from '../useWorkflow'
-import EmptyState from './EmptyState.vue'
+import FetchPanel from './FetchPanel.vue'
 import Icon from './Icon.vue'
 import PlanPreview from './PlanPreview.vue'
 
@@ -23,7 +24,7 @@ const options = computed<PlanOptions>(() => ({
   keepLooseBarItems: s.value.keepLooseBarItems
 }))
 
-/** 参与整理、还没有说明的条数 */
+/** 参与整理、还没有说明的条数：生成方案时先给它们写说明 */
 const missing = computed(() => {
   const f = state.flat
   const { bar, other } = roots.value
@@ -34,7 +35,7 @@ const missing = computed(() => {
 const plan = ref<Plan>()
 const progress = ref<StageProgress>()
 const usage = ref<AiUsage>()
-const running = ref<'' | 'describe' | 'plan' | 'apply'>('')
+const running = ref<'' | 'plan' | 'apply'>('')
 const applied = ref<[number, number]>([0, 0])
 const error = ref('')
 const confirm = ref<HTMLDialogElement>()
@@ -70,22 +71,6 @@ function toggleLock(id: string, on: boolean) {
   void saveSettings({ lockedFolderIds: [...next] })
 }
 
-async function describe() {
-  error.value = ''
-  running.value = 'describe'
-  ctrl = new AbortController()
-  try {
-    const r = await workflow().describe((p) => (progress.value = p), ctrl.signal)
-    usage.value = r.usage
-    state.meta = await workflow().getMeta()
-    if (r.failedIds.length) error.value = `${r.failedIds.length} 条没写成`
-  } catch (e) {
-    error.value = errorText(e)
-  } finally {
-    running.value = ''
-  }
-}
-
 async function generate() {
   error.value = ''
   running.value = 'plan'
@@ -98,6 +83,8 @@ async function generate() {
     error.value = errorText(e)
   } finally {
     running.value = ''
+    // 生成方案时先补了说明：卡片上的说明跟着刷新
+    state.meta = await workflow().getMeta()
   }
 }
 
@@ -190,21 +177,60 @@ const planLine = computed(() => {
           <input type="checkbox" :checked="lockedIds.has(f.id)" @change="toggleLock(f.id, ($event.target as HTMLInputElement).checked)" />{{ f.title }}
         </label>
       </div>
-      <div class="row-gap" style="margin-top: 16px">
-        <template v-if="hasKey">
-          <button class="btn" type="button" :disabled="!!running || !missing" @click="describe">生成说明<span v-if="missing" class="secondary">&nbsp;{{ missing }}</span></button>
-          <!-- 有方案以后，主按钮让给底部的「应用」 -->
-          <button class="btn" :class="{ 'btn-primary': !plan }" type="button" :disabled="!!running" @click="generate">生成方案</button>
-          <button v-if="running === 'describe' || running === 'plan'" class="link" type="button" @click="ctrl?.abort()">停止</button>
-        </template>
-        <button v-else class="btn btn-primary" type="button" @click="state.settingsOpen = true">设置 API key</button>
-        <template v-if="(running === 'describe' || running === 'plan') && progress">
-          <progress :max="progress.totalBatches || 1" :value="progress.doneBatches"></progress>
-          <span class="secondary">{{ progressLine }}</span>
-        </template>
-        <span v-else-if="usageLine" class="secondary small">{{ usageLine }}</span>
-      </div>
-      <p v-if="error" class="secondary" style="margin-top: 12px">{{ error }}</p>
+
+      <ol class="steps">
+        <li class="step">
+          <span class="step-n">1</span>
+          <div class="step-body">
+            <div class="step-head">
+              <span class="step-title">抓取网页信息</span>
+              <span class="secondary small">可以跳过，抓了 AI 分得更准</span>
+            </div>
+            <FetchPanel />
+          </div>
+        </li>
+        <li class="step">
+          <span class="step-n">2</span>
+          <div class="step-body">
+            <div class="step-head">
+              <span class="step-title">生成方案</span>
+              <span v-if="missing" class="secondary small">先给 {{ missing }} 条写说明，再分目录</span>
+            </div>
+            <div class="row-gap">
+              <template v-if="hasKey">
+                <!-- 有方案以后，主按钮让给底部的「应用」 -->
+                <button class="btn" :class="{ 'btn-primary': !plan }" type="button" :disabled="!!running" @click="generate">生成方案</button>
+                <button v-if="running === 'plan'" class="link" type="button" @click="ctrl?.abort()">停止</button>
+              </template>
+              <button v-else class="btn btn-primary" type="button" @click="state.settingsOpen = true">设置 API key</button>
+              <template v-if="running === 'plan' && progress">
+                <progress :max="progress.totalBatches || 1" :value="progress.doneBatches"></progress>
+                <span class="secondary">{{ progressLine }}</span>
+              </template>
+              <span v-else-if="usageLine" class="secondary small">{{ usageLine }}</span>
+            </div>
+            <p v-if="error" class="secondary">{{ error }}</p>
+          </div>
+        </li>
+        <li class="step">
+          <span class="step-n">3</span>
+          <div class="step-body">
+            <div class="step-head">
+              <span class="step-title">检查方案</span>
+              <span class="secondary small">{{ plan ? '在下面改目录、合并、改去向' : '生成方案后在下面检查' }}</span>
+            </div>
+          </div>
+        </li>
+        <li class="step">
+          <span class="step-n">4</span>
+          <div class="step-body">
+            <div class="step-head">
+              <span class="step-title">应用</span>
+              <span class="secondary small">先下载备份，能撤销</span>
+            </div>
+          </div>
+        </li>
+      </ol>
     </div>
 
     <template v-if="plan">
@@ -221,7 +247,6 @@ const planLine = computed(() => {
         <button class="btn btn-primary" type="button" :disabled="!!running || pendingApply" @click="confirm?.showModal()">应用</button>
       </div>
     </template>
-    <EmptyState v-else-if="hasKey && !running" icon="bookmark" text="还没有方案" />
 
     <dialog ref="confirm" aria-labelledby="confirm-title">
       <h2 id="confirm-title">应用整理方案？</h2>

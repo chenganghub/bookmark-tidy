@@ -20,7 +20,9 @@ const form = reactive({
   autoFile: true,
   autoNotify: true,
   textDomains: '',
-  privateDomains: ''
+  privateDomains: '',
+  // bookmark-ux：工具栏图标上的数字
+  badge: true
 })
 const showKey = ref(false)
 const test = ref('')
@@ -53,7 +55,8 @@ watch(
       autoFile: s.autoFile,
       autoNotify: s.autoNotify,
       textDomains: s.textDomains.join('\n'),
-      privateDomains: s.privateDomains.join('\n')
+      privateDomains: s.privateDomains.join('\n'),
+      badge: s.badge
     })
     test.value = ''
     error.value = ''
@@ -73,7 +76,8 @@ async function persist() {
     autoFile: form.autoFile,
     autoNotify: form.autoNotify,
     textDomains: lines(form.textDomains),
-    privateDomains: lines(form.privateDomains)
+    privateDomains: lines(form.privateDomains),
+    badge: form.badge
   })
   state.layout = form.view
   // 换成别家的接口时，申请它的网址权限（DeepSeek 已在必需权限里）
@@ -160,6 +164,7 @@ async function restore() {
     <div class="row-gap" style="margin-top: 24px; gap: 16px">
       <label class="check"><input v-model="form.autoFile" type="checkbox" />收藏时自动整理</label>
       <label class="check"><input v-model="form.autoNotify" type="checkbox" :disabled="!form.autoFile" />通知</label>
+      <label class="check"><input v-model="form.badge" type="checkbox" />工具栏角标</label>
     </div>
     <label class="field">
       <span>发正文的网站</span>
