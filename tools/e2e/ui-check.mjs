@@ -390,6 +390,34 @@ try {
   const auditPrimaries = await page.evaluate(primaries('.content'))
   expect(auditPrimaries.length === 0, '待处理视图的内容区没有主按钮', JSON.stringify(auditPrimaries))
   await page.screenshot(shot('audit-light'))
+  // T13 原体检页的统计卡片一张不少：按 state 里同一份体检结果算出该有的卡（书签、文件夹、书签栏顶层三张常驻，问题数不为 0 的才有），
+  // 和页面上逐张对上标签和数字；每张问题卡片点开，下面的清单条数等于卡片上的数
+  const audit = await page.evaluate(`(async () => {
+    const { summary: s, issues: i, flat } = window.__bt.state
+    const bar = flat.roots.find((r) => r.rootType === 'bookmarks-bar')
+    const want = [
+      ['书签', s.bookmarks], ['文件夹', s.folders], ['书签栏顶层', bar ? bar.topFolders + bar.looseBookmarks : 0],
+      ['重复', s.duplicates.normalized.extra], ['空文件夹', i.emptyFolders.length], ['同名嵌套', i.nestedSameNameFolders.length],
+      ['默认名', i.defaultNameFolders.length], ['可清理标题', i.cleanable.length], ['超长标题', i.longTitle.length],
+      ['冷门', i.cold.length], ['非 http', i.notHttp.length], ['内网', i.intranet.length]
+    ].filter(([, n], k) => k < 3 || n > 0)
+    const cards = [...document.querySelectorAll('details.tri-audit .stat')]
+    const got = cards.map((c) => [c.querySelector('.label').textContent.trim(), Number(c.querySelector('.num').textContent)])
+    const lists = []
+    for (const c of cards.filter((c) => !c.disabled)) {
+      c.click()
+      await new Promise((r) => setTimeout(r, 80))
+      lists.push([c.querySelector('.label').textContent.trim(), Number(c.querySelector('.num').textContent), document.querySelectorAll('details.tri-audit .list .row').length])
+      c.click()
+      await new Promise((r) => setTimeout(r, 80))
+    }
+    return { want, got, lists }
+  })()`)
+  expect(JSON.stringify(audit.got) === JSON.stringify(audit.want), 'T13 全部检查项里统计卡片一张不少（标签、数字和体检结果逐张对上）', audit.got.map(([l, n]) => `${l} ${n}`).join('、'))
+  expect(audit.lists.length === audit.got.length - 3 && audit.lists.every(([, n, rows]) => rows === n), 'T13 每张问题卡片点开都有清单，条数等于卡片上的数', audit.lists.map(([l, n, rows]) => `${l} ${n}→${rows} 行`).join('、'))
+  // O1「抓取网页信息」从体检移走了：待处理（含展开的全部检查项）里没有抓取的按钮、也没有原来「网页信息」那一节
+  const fetchLeft = await page.evaluate(`[...document.querySelectorAll('.content button, .content h2')].map((x) => x.textContent.trim()).filter((t) => t.includes('抓取') || t.includes('网页信息'))`)
+  expect(fetchLeft.length === 0, 'O1、T13 待处理里（含全部检查项）没有「抓取网页信息」和「网页信息」一节，抓取在整理页第 ① 步', JSON.stringify(fetchLeft))
 
   await page.evaluate(`[...document.querySelectorAll('.stat')].find((s) => s.textContent.includes('可清理标题')).click()`)
   await page.waitFor('document.querySelector(".content .list .row")')
@@ -710,6 +738,32 @@ try {
   await settled(`window.__bt.state.notice?.text === '已撤销'`)
   expect(boxes.length > 0 && boxes.every(Boolean), 'T8 空文件夹默认全选', JSON.stringify(boxes))
   expect(btnText === `删除 ${e0 - firstGroupSize} 个空文件夹` && emptyText === `已删除 ${e0 - firstGroupSize} 个空文件夹` && e1 === firstGroupSize && (await page.evaluate(emptyIds)) === e0, 'T8 只删勾着的，撤销后回来', `${btnText}；${emptyText}；${e0} → ${e1} → ${await page.evaluate(emptyIds)}`)
+
+  // T8 删的时候再查一次：清单列出来以后，勾着的一组最上层的文件夹里有了书签（比如在 Chrome 书签管理器里挪进去），
+  // 删的时候跳过它，结果条写「· 跳过 1」。直接调 workflow 挪：演示数据的书签接口不发变化事件，清单不刷新，和看着旧清单点下去一样
+  const skipRun = await page.evaluate(`(async () => {
+    const bt = window.__bt
+    const boxes = [...document.querySelectorAll('details.tri-more input[type=checkbox]')]
+    const g = bt.state.triage.empty[boxes.findLastIndex((b) => b.checked)]
+    const btn = [...document.querySelectorAll('.tri .tri-all')].find((b) => b.textContent.includes('空文件夹'))
+    const k = Number(btn.textContent.match(/\\d+/)[0])
+    const mark = bt.state.triage.unsure[0].bookmark
+    window.__skipMove = await bt.workflow.moveBookmarks([mark.id], { folderId: g.folder.id })
+    const stale = bt.state.triage.empty.some((x) => x.folder.id === g.folder.id)
+    btn.click()
+    return { k, target: g.folder.title, size: g.ids.length, stale, mark: mark.id, from: mark.parentId }
+  })()`)
+  await settled(`window.__bt.state.notice?.text.includes('空文件夹')`)
+  const skipText = await page.evaluate(noticeText)
+  await page.screenshot(shot('triage-empty-skipped'))
+  await page.evaluate(clickUndo)
+  await settled(`window.__bt.state.notice?.text === '已撤销'`)
+  // 挪进去的那条也挪回原处：走结果条上的「撤销」（撤销完界面会刷新），等它回去了再往下
+  await page.evaluate(`(window.__bt.state.notice = { kind: 'manual', text: '挪进空文件夹的那条', change: window.__skipMove }, true)`)
+  await sleep(150)
+  await page.evaluate(clickUndo)
+  await settled(`window.__bt.state.flat.bookmarks.find((b) => b.id === ${JSON.stringify(skipRun.mark)})?.parentId === ${JSON.stringify(skipRun.from)} && window.__bt.state.triage.unsure.length === ${u0}`)
+  expect(skipRun.stale && skipText === `已删除 ${skipRun.k - 1} 个空文件夹 · 跳过 1`, 'T8 删的时候再查一次：里面有了书签的跳过，结果条写「· 跳过 N」', `往「${skipRun.target}」（这组 ${skipRun.size} 个）里放了一条再点「删除 ${skipRun.k} 个空文件夹」：${skipText}`)
 
   // T9 全部处理完：拿不准的放进去、建议删除的删掉（「其他」的逐条删）、空文件夹删掉 →「都处理完了」，顶栏不带数字
   // 建议删除的每一行也有「放到」和「删除」
