@@ -712,16 +712,26 @@ try {
   expect(btnText === `删除 ${e0 - firstGroupSize} 个空文件夹` && emptyText === `已删除 ${e0 - firstGroupSize} 个空文件夹` && e1 === firstGroupSize && (await page.evaluate(emptyIds)) === e0, 'T8 只删勾着的，撤销后回来', `${btnText}；${emptyText}；${e0} → ${e1} → ${await page.evaluate(emptyIds)}`)
 
   // T9 全部处理完：拿不准的放进去、建议删除的删掉（「其他」的逐条删）、空文件夹删掉 →「都处理完了」，顶栏不带数字
+  // 建议删除的每一行也有「放到」和「删除」
+  const cleanupOps = await page.evaluate(`[...[...document.querySelectorAll('.tri')].find((s) => s.querySelector('.tri-title').textContent === '建议删除').querySelectorAll('.tri-row')].map((r) => !!r.querySelector('select') && r.querySelector('.tri-del')?.textContent.trim() === '删除')`)
+  expect(cleanupOps.length === (await page.evaluate(cleanupN)) && cleanupOps.every(Boolean), 'T6 建议删除每条都有「放到」和「删除」', JSON.stringify(cleanupOps))
+  const moveTexts = []
   for (let i = 0; i < 20 && (await page.evaluate(unsureN)); i++) {
-    await page.evaluate(`(() => { const s = document.querySelector('.tri .tri-row select'); s.value = s.options[s.options.length - 2].value; s.dispatchEvent(new Event('change')); return true })()`)
+    // 下拉里直接选一个文件夹（不是 AI 猜的那个「放进去」）
+    const picked = await page.evaluate(`(() => { const s = document.querySelector('.tri .tri-row select'); const o = s.options[s.options.length - 2]; s.value = o.value; s.dispatchEvent(new Event('change')); return o.textContent.replace('（AI 猜的）', '').trim() })()`)
     await settled(`window.__bt.state.notice?.kind === 'manual'`)
+    moveTexts.push([picked, await page.evaluate(noticeText)])
     await page.evaluate(`window.__bt.state.notice = null`)
   }
+  expect(moveTexts.length > 0 && moveTexts.every(([p, t]) => t === `已放到「${p}」`) && (await page.evaluate(unsureN)) === 0, 'T3 「放到」下拉里选了就移过去、从列表里消失，结果条写「已放到「目录」」', JSON.stringify(moveTexts))
+  const delTexts = []
   for (let i = 0; i < 20 && (await page.evaluate(cleanupN)); i++) {
     await page.evaluate(`[...document.querySelectorAll('.tri')].find((s) => s.querySelector('.tri-title').textContent === '建议删除').querySelector('.tri-del').click()`)
     await settled(`window.__bt.state.notice?.kind === 'manual'`)
+    delTexts.push(await page.evaluate(noticeText))
     await page.evaluate(`window.__bt.state.notice = null`)
   }
+  expect(delTexts.length > 0 && delTexts.every((t) => t === '已删除 1 条') && (await page.evaluate(cleanupN)) === 0, 'T6 建议删除逐条「删除」（包括原因已经不在了的）', JSON.stringify(delTexts))
   if (await page.evaluate(emptyIds)) {
     // T8 里取消勾选的那组勾回来
     await page.evaluate(`([...document.querySelectorAll('details.tri-more input[type=checkbox]')].filter((b) => !b.checked).forEach((b) => b.click()), true)`)
