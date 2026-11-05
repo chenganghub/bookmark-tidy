@@ -104,6 +104,7 @@ function demoClient(stateName: string): PopupClient {
     hasPermission: true,
     hasKey: true,
     unfiled: stateName === 'result' ? 0 : stateName === 'empty' ? 0 : 3,
+    pending: stateName === 'empty' ? 0 : 4,
     stats: { filed: 12, toInbox: 3, undone: 1, movedAgain: 0, omnibox: 5, buttonRuns: 2 },
     recent: stateName === 'empty' ? [] : recent,
     batch,

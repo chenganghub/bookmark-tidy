@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createStore, DEFAULT_SETTINGS, MAX_SNAPSHOTS, memoryKV } from '../src/core/store'
+import { createStore, DEFAULT_SETTINGS, MAX_HAND_PLACED, MAX_SNAPSHOTS, memoryKV } from '../src/core/store'
 import type { ApplyLog } from '../src/core/types'
 
 const log = (applyId: string, status: ApplyLog['status'] = 'running'): ApplyLog => ({
@@ -123,6 +123,21 @@ describe('store：二期的自动整理数据', () => {
     await store.addOwn(['1', '2'])
     await store.addOwn(['2', '3'])
     expect(await store.getOwn()).toEqual(['1', '2', '3'])
+  })
+
+  it('bookmark-ux：工具栏角标默认开；你定过位置的 id 去重、先进先出最多 2000 个', async () => {
+    const store = createStore(memoryKV())
+    expect((await store.getSettings()).badge).toBe(true)
+    await store.addHandPlaced(['1', '2'])
+    await store.addHandPlaced(['2', '3'])
+    expect(await store.getHandPlaced()).toEqual(['1', '2', '3'])
+    // 再记一次的挪到最新的一头，先被挤掉的是最久没动过的
+    await store.addHandPlaced(['1'])
+    expect(await store.getHandPlaced()).toEqual(['2', '3', '1'])
+    await store.addHandPlaced(Array.from({ length: MAX_HAND_PLACED }, (_, i) => `n${i}`))
+    const ids = await store.getHandPlaced()
+    expect(ids).toHaveLength(MAX_HAND_PLACED)
+    expect(ids[0]).toBe('n0')
   })
 
   it('正文：删掉书签已不在的', async () => {

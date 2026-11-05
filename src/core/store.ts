@@ -20,7 +20,8 @@ export const DEFAULT_SETTINGS: Settings = {
   // 设置只存改过的键，修改默认值对未覆盖此项的已安装实例也生效。
   autoThreshold: 0.5,
   textDomains: [...DEFAULT_TEXT_DOMAINS],
-  privateDomains: [...DEFAULT_PRIVATE_DOMAINS]
+  privateDomains: [...DEFAULT_PRIVATE_DOMAINS],
+  badge: true
 }
 
 /** 快照最多留几份：存新的时删最旧的 */
@@ -30,6 +31,8 @@ export const RECORD_DAYS = 30
 export const MAX_RECORDS = 500
 /** 撤销、恢复重建出来的书签 id：先进先出最多留这么多 */
 export const MAX_OWN = 2000
+/** 你定过位置的书签 id（不算进角标、自动整理不再挪）：先进先出最多留这么多 */
+export const MAX_HAND_PLACED = 2000
 /** 正文最多存多少条 */
 export const MAX_TEXTS = 1000
 
@@ -52,7 +55,9 @@ const K = {
   text: (id: string) => `text:${id}`,
   stats: 'autoStats',
   own: 'autoOwn',
-  lastBatch: 'autoLastBatch'
+  lastBatch: 'autoLastBatch',
+  // bookmark-ux
+  handPlaced: 'handPlaced'
 }
 
 export interface Store extends ApplyStore {
@@ -73,6 +78,9 @@ export interface Store extends ApplyStore {
   bumpStats(delta: Partial<AutoStats>): Promise<AutoStats>
   getOwn(): Promise<string[]>
   addOwn(ids: string[]): Promise<void>
+  /** 你定过位置的：待处理的「放到」、卡片的「移动」、一键整理预览里没勾的、自动整理前你已经挪过的、一期方案里没勾的 */
+  getHandPlaced(): Promise<string[]>
+  addHandPlaced(ids: string[]): Promise<void>
   getLastBatch(): Promise<string | undefined>
   setLastBatch(batchId: string): Promise<void>
   saveText(bookmarkId: string, t: SavedText): Promise<void>
@@ -167,6 +175,15 @@ export function createStore(kv: KV): Store {
       const cur = (await one<string[]>(K.own)) || []
       const next = [...cur.filter((x) => !ids.includes(x)), ...ids]
       await kv.set({ [K.own]: next.slice(-MAX_OWN) })
+    },
+    async getHandPlaced() {
+      return (await one<string[]>(K.handPlaced)) || []
+    },
+    async addHandPlaced(ids) {
+      if (!ids.length) return
+      const cur = (await one<string[]>(K.handPlaced)) || []
+      const next = [...cur.filter((x) => !ids.includes(x)), ...ids]
+      await kv.set({ [K.handPlaced]: next.slice(-MAX_HAND_PLACED) })
     },
     getLastBatch: () => one<string>(K.lastBatch),
     async setLastBatch(batchId) {

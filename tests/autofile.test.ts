@@ -617,3 +617,90 @@ describe('一键整理', () => {
     expect((await t.filer.status()).unfiled).toBe(0)
   })
 })
+
+describe('bookmark-ux：角标的 N、待处理的 M', () => {
+  it('K1 待整理里的不算进 N，点「放好」也不问 AI；M 数待整理、整理前的空文件夹、待清理里的书签', async () => {
+    const t = await setup()
+    const inbox = await t.bm.create({ parentId: '2', title: '待整理' })
+    for (let i = 0; i < 6; i++) await t.bm.create({ parentId: inbox.id, title: `拿不准 ${i}`, url: `https://in.com/${i}` })
+    const holding = await t.bm.create({ parentId: '2', title: '整理前的空文件夹' })
+    const old = await t.bm.create({ parentId: holding.id, title: '旧目录' })
+    await t.bm.create({ parentId: old.id, title: '旧目录里剩的', url: 'https://old.com/' })
+    const cleanup = await t.bm.create({ parentId: '2', title: '待清理' })
+    await t.bm.create({ parentId: cleanup.id, title: '失效的', url: 'https://dead.com/' })
+    const st = await t.filer.status()
+    expect(st.unfiled).toBe(0)
+    expect(st.pending).toBe(8)
+    expect(await t.filer.runButton()).toMatchObject({ phase: 'done', result: { filed: 0, toInbox: 0, skipped: 0 } })
+    expect(t.prompts).toHaveLength(0)
+  })
+
+  it('K2 点「放好」后放进目录的、进待整理的都不再算；AI 失败的还算，结果写条数和原因；再点只问失败的那条；计数照样累加', async () => {
+    const t = await setup({ answer: (title) => (title.includes('失败') ? 'fail' : title.includes('拿不准') ? { path: 'AI 工具', confidence: 0.3 } : { path: 'AI 工具', confidence: 0.9 }) })
+    const ok = (await t.bm.create({ parentId: '2', title: '拿得准', url: 'https://m.com/ok' })).id
+    const unsure = (await t.bm.create({ parentId: '2', title: '拿不准', url: 'https://m.com/unsure' })).id
+    const failed = (await t.bm.create({ parentId: '2', title: '会失败', url: 'https://m.com/fail' })).id
+    expect((await t.filer.status()).unfiled).toBe(3)
+    const r = await t.filer.runButton()
+    expect(r).toMatchObject({ phase: 'done', result: { filed: 1, toInbox: 1, skipped: 0, failed: 1, error: '接口拒绝访问（HTTP 401），检查 API key' } })
+    expect(await t.parentOf(ok)).toBe('FAI')
+    expect((await t.store.getRecord(unsure))?.status).toBe('inbox')
+    expect(await t.parentOf(failed)).toBe('2')
+    expect((await t.filer.status()).unfiled).toBe(1)
+    expect(await t.store.getStats()).toMatchObject({ filed: 1, toInbox: 1, buttonRuns: 1 })
+    const asked = t.prompts.length
+    await t.filer.runButton()
+    expect(t.prompts.length - asked).toBe(1)
+    expect(t.prompts.at(-1)![1].content).toContain('会失败')
+  })
+
+  it('K2 全都放好以后再点「放好」：不再请求 AI', async () => {
+    const t = await setup()
+    for (let i = 0; i < 3; i++) await t.bm.create({ parentId: '2', title: `手机同步的 ${i}`, url: `https://m.com/${i}` })
+    await t.filer.runButton()
+    const asked = t.prompts.length
+    expect(await t.filer.runButton()).toMatchObject({ phase: 'done', result: { filed: 0, toInbox: 0, skipped: 0 } })
+    expect(t.prompts.length).toBe(asked)
+  })
+
+  it('K2、K3 预览里没勾的算你定了不动：不再算进 N，AI 的说明照样存，再整理也不挪它；预览里失败的条数并进结果', async () => {
+    const t = await setup({ answer: (title) => (title === '第 11' ? 'fail' : { path: 'AI 工具', confidence: 0.9 }) })
+    const ids: string[] = []
+    for (let i = 0; i < 12; i++) ids.push((await t.bm.create({ parentId: '2', title: `第 ${i}`, url: `https://m.com/${i}` })).id)
+    const p = await t.filer.runButton()
+    expect(p).toMatchObject({ phase: 'preview', aiFailed: { count: 1 } })
+    const done = await t.filer.applyBatch(p.id, ids.slice(0, 2))
+    expect(done.result).toMatchObject({ filed: 2, toInbox: 0, skipped: 9, failed: 1 })
+    expect((await t.store.getHandPlaced()).sort()).toEqual(ids.slice(2, 11).sort())
+    expect((await t.store.getMeta())[ids[5]]).toMatchObject({ desc: '说明：第 5' })
+    // 剩下 AI 失败的那条
+    expect((await t.filer.status()).unfiled).toBe(1)
+    const asked = t.prompts.length
+    await t.filer.runButton()
+    expect(t.prompts.length - asked).toBe(1)
+    expect(await t.parentOf(ids[5])).toBe('2')
+  })
+
+  it('K3 收藏后 8 秒里你在扩展里放好了：后台排着的不再挪；处理前你自己挪过的，记成你定过位置', async () => {
+    const t = await setup({ tabs: ['https://x.com/a', 'https://x.com/b'] })
+    const a = (await t.save('放好了', 'https://x.com/a')).node
+    await t.store.addHandPlaced([a.id])
+    const b = (await t.save('自己挪了', 'https://x.com/b')).node
+    await t.bm.move(b.id, { parentId: 'FC' })
+    await t.later()
+    expect(await t.parentOf(a.id)).toBe('2')
+    expect(await t.store.getRecord(a.id)).toBeUndefined()
+    expect(await t.parentOf(b.id)).toBe('FC')
+    expect(await t.store.getHandPlaced()).toContain(b.id)
+  })
+
+  it('进待整理时记下 AI 猜的目录（在候选里的才记），待处理里预选它', async () => {
+    const t = await setup({ tabs: ['https://x.com/a', 'https://x.com/b'], answer: (title) => (title.includes('乱猜') ? { path: '不存在的目录', confidence: 0.3 } : { path: '前端/CSS', confidence: 0.3 }) })
+    const a = (await t.save('猜 CSS', 'https://x.com/a')).node
+    const b = (await t.save('乱猜', 'https://x.com/b')).node
+    await t.later()
+    expect(await t.store.getRecord(a.id)).toMatchObject({ status: 'inbox', guess: { folderId: 'FC', path: '前端/CSS' } })
+    expect((await t.store.getRecord(b.id))?.status).toBe('inbox')
+    expect((await t.store.getRecord(b.id))?.guess).toBeUndefined()
+  })
+})

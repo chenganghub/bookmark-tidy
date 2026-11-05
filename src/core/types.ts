@@ -475,6 +475,8 @@ export interface Settings {
   textDomains: string[]
   /** 不读正文、请求里只给标题和域名的站点（另加内网和锁定文件夹里出现过的站点） */
   privateDomains: string[]
+  /** 工具栏图标上显示还没放好的新收藏数 */
+  badge: boolean
 }
 
 // ---------------------------------------------------------------- 二期：收藏即整理（auto.ts / autofile.ts）
@@ -507,6 +509,8 @@ export interface AutoRecord {
   path: string
   confidence: number
   status: AutoStatus
+  /** 进待整理时 AI 给的目录（在候选里的才记）：待处理里预选它 */
+  guess?: { folderId: string; path: string }
 }
 
 export interface AutoStats {

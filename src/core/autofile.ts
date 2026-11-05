@@ -26,7 +26,8 @@ import { isPrivateUrl, matchesDomain, privateSites, textAllowed } from './sites'
 import { createStore } from './store'
 import { cutChars, isPublicExcerpt, rawExcerpt, TEXT_MAX } from './text'
 import { descendantFolderIds, flattenTree, isUnderFolders, pickRoot } from './tree'
-import type { ApplyStatus, AutoJob, AutoRecord, AutoStats, BookmarkNode, BookmarksApi, ChatJsonFn, FileOutput, FlatTree, KV, Settings } from './types'
+import { pendingCount } from './triage'
+import type { ApplyStatus, AutoJob, AutoRecord, AutoStats, BookmarkMeta, BookmarkNode, BookmarksApi, ChatJsonFn, FileOutput, FlatTree, KV, Settings } from './types'
 
 /** 注入页面的抽正文脚本返回的东西 */
 export interface PageRead {
@@ -64,7 +65,10 @@ export interface BatchState {
   updatedAt?: number
   /** preview 时：每条的去向，等用户勾选 */
   items?: BatchItem[]
-  result?: { filed: number; toInbox: number; skipped: number }
+  /** preview 时：AI 请求失败的条数和第一条原因，确认后并进结果 */
+  aiFailed?: { count: number; error: string }
+  /** failed、error：AI 请求失败的条数和第一条原因（有失败才有）；失败的下次还算进 N */
+  result?: { filed: number; toInbox: number; skipped: number; failed?: number; error?: string }
   error?: string
 }
 
@@ -76,6 +80,8 @@ export interface AutoStatus {
   hasPermission: boolean
   hasKey: boolean
   unfiled: number
+  /** 待处理里要你拿主意的书签数（拿不准放哪 + 建议删除） */
+  pending: number
   stats: AutoStats
   recent: (AutoRecord & { title: string })[]
   batch?: BatchState
@@ -276,9 +282,13 @@ export function createAutoFiler(deps: AutoFilerDeps) {
     const own = button ? new Set<string>() : new Set(await store.getOwn())
     const check = checkJob({ ...job, index: 0, createdAt: 0, dueAt: 0 }, flat, { lockedIds: ctx.lockedIds, records: button ? {} : records, own })
     if (check.drop) return undefined
+    // 你已经定过位置的（待处理里放好的、预览里没勾的……）：后台排着的、预览里准备好的旧去向都不再用
+    if ((await store.getHandPlaced()).includes(job.bookmarkId)) return undefined
     const node = await getNode(job.bookmarkId)
     if (!node || node.parentId === undefined) return undefined
     const { userMoved, userRetitled } = check
+    // 处理前你已经自己挪过：位置算你定的，以后也不再自动挪
+    if (userMoved) await store.addHandPlaced([node.id])
 
     let decision: MoveDecision | undefined
     if (!userMoved && prep.suggestion) decision = opts.forceDecision ?? decideMove(prep.suggestion, s.autoThreshold, ctx.cands)
@@ -310,7 +320,9 @@ export function createAutoFiler(deps: AutoFilerDeps) {
         to: { parentId: target, title: retitled ? clean : node.title },
         path: decision?.path ?? '',
         confidence: sug?.confidence ?? 0,
-        status: decision?.kind === 'inbox' ? 'inbox' : 'filed'
+        status: decision?.kind === 'inbox' ? 'inbox' : 'filed',
+        // 进待整理时 AI 给的目录还在候选里：待处理里预选它
+        ...(decision?.kind === 'inbox' && sug && ctx.cands.idOf[sug.path] ? { guess: { folderId: ctx.cands.idOf[sug.path], path: sug.path } } : {})
       }
       await store.saveRecord(rec, now())
       await store.bumpStats(decision?.kind === 'inbox' ? { toInbox: 1 } : decision?.kind === 'folder' ? { filed: 1 } : {})
@@ -505,8 +517,8 @@ export function createAutoFiler(deps: AutoFilerDeps) {
       lockedIds: new Set(effectiveLockedIds(f, s)),
       keepLooseBarItems: s.keepLooseBarItems,
       organizedAt: latest!.startedAt,
-      now: now(),
-      own: new Set(await store.getOwn())
+      own: new Set(await store.getOwn()),
+      placed: new Set(await store.getHandPlaced())
     })
   }
 
@@ -606,19 +618,24 @@ export function createAutoFiler(deps: AutoFilerDeps) {
       }
       await Promise.all(Array.from({ length: Math.min(4, list.length) }, worker))
       const ok = prepared.filter((p) => p.prep.suggestion)
-      const failed = prepared.find((p) => p.prep.aiFailed)?.prep.aiFailed
-      if (!ok.length && failed) throw new Error(failed)
+      const failedItems = prepared.filter((p) => p.prep.aiFailed)
+      const failMsg = failedItems[0]?.prep.aiFailed
+      if (!ok.length && failMsg) throw new Error(failMsg)
+      // AI 没成的：不写说明、不算定过位置，下次还在 N 里；条数和第一条原因写进结果
+      const aiFailed = failMsg ? { count: failedItems.length, error: failMsg } : undefined
       const { cands } = context(flat, s, await store.getPlan())
       const decided = ok.map((p) => ({ ...p, decision: decideMove(p.prep.suggestion, s.autoThreshold, cands) }))
       if (decided.length <= BUTTON_DIRECT_MAX) {
         const result = await commitBatch(id, decided, s)
-        return await live.set({ ...live.get(), phase: 'done', result: { ...result, skipped: result.skipped + (list.length - decided.length) } })
+        const skipped = result.skipped + (list.length - decided.length - failedItems.length)
+        return await live.set({ ...live.get(), phase: 'done', result: { ...result, skipped, ...failedPart(aiFailed) } })
       }
       pendingPreview.set(id, decided)
       await deps.session.set({ [Q.pending]: { batchId: id, items: decided } })
       return await live.set({
         ...live.get(),
         phase: 'preview',
+        ...(aiFailed ? { aiFailed } : {}),
         items: decided.map((d) => ({
           bookmarkId: d.bookmarkId,
           title: d.title,
@@ -636,6 +653,22 @@ export function createAutoFiler(deps: AutoFilerDeps) {
     } finally {
       live.stop()
     }
+  }
+
+  /** 结果里的失败部分：有失败才带 */
+  const failedPart = (f: BatchState['aiFailed']) => (f ? { failed: f.count, error: f.error } : {})
+
+  /** 预览里没勾的：记进「你定过位置的」（之后不算进 N、自动整理不再挪）；AI 给的说明照样存（不覆盖手改的） */
+  async function keepUnchosen(items: PendingItem[]): Promise<void> {
+    if (!items.length) return
+    await store.addHandPlaced(items.map((p) => p.bookmarkId))
+    const cur = await store.getMeta()
+    const entries: Record<string, BookmarkMeta> = {}
+    for (const { bookmarkId, prep } of items) {
+      const sug = prep.suggestion
+      if (sug && !cur[bookmarkId]?.manual) entries[bookmarkId] = { desc: sug.desc, title: sug.title, tags: sug.tags, type: sug.type, updatedAt: now() }
+    }
+    await store.saveMeta(entries)
   }
 
   /** 预览里准备好的去向：先看内存；后台被停掉重启过，就从会话存储里拿 */
@@ -669,6 +702,8 @@ export function createAutoFiler(deps: AutoFilerDeps) {
       const s = await store.getSettings()
       const chosen = new Set(bookmarkIds)
       const items = pending.filter((p) => chosen.has(p.bookmarkId))
+      // 没勾的 = 你定了这几条不动
+      await keepUnchosen(pending.filter((p) => !chosen.has(p.bookmarkId)))
       // 先收起预览、显示「整理中」：弹窗里不再有「放好」「取消」可点；之后每放一条写一次进度
       const l = (live = liveBatch({ ...b, phase: 'running', items: undefined, total: items.length, done: 0 }))
       await l.set(l.get())
@@ -676,7 +711,8 @@ export function createAutoFiler(deps: AutoFilerDeps) {
       const result = await commitBatch(batchId, items, s, () => l.set({ ...l.get(), done: ++n }))
       // 清掉预览的去向只是收尾，失败了也不影响结果
       await dropPending(batchId).catch(() => {})
-      return await l.set({ ...b, phase: 'done', items: undefined, result: { ...result, skipped: result.skipped + (pending.length - items.length) } })
+      const skipped = result.skipped + (pending.length - items.length)
+      return await l.set({ ...b, phase: 'done', items: undefined, aiFailed: undefined, result: { ...result, skipped, ...failedPart(b.aiFailed) } })
     } catch (e) {
       // 存储写不进去之类：记成失败，弹窗里看得到原因，不会一直挂着「整理中」
       await dropPending(batchId).catch(() => {})
@@ -724,6 +760,7 @@ export function createAutoFiler(deps: AutoFilerDeps) {
       hasPermission: await deps.hasSitePermission(),
       hasKey: !!s.ai.apiKey || !!deps.chat,
       unfiled: (await unfiled(flat)).length,
+      pending: pendingCount(flat),
       stats: await store.getStats(),
       recent: records
         .filter((r) => r.source === 'save' && titleOf.has(r.bookmarkId))

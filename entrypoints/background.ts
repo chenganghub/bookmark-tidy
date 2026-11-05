@@ -74,7 +74,8 @@ export default defineBackground(() => {
     badgeTimer = setTimeout(() => void updateBadge(), 2000)
   }
   async function updateBadge() {
-    const n = (await filer.unfiled().catch(() => [])).length
+    // 设置里关掉「工具栏角标」时不显示（弹窗里的 N 照常）
+    const n = (await store.getSettings()).badge ? (await filer.unfiled().catch(() => [])).length : 0
     await browser.action.setBadgeBackgroundColor({ color: '#8E8E93' })
     await browser.action.setBadgeText({ text: n ? (n > 99 ? '99+' : String(n)) : '' })
   }

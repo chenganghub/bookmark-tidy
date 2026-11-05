@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { candidateFolders, checkJob, decideMove, findDuplicate, isOrganized, RETRY_AFTER_MS, sameUrl, unfiledBookmarks } from '../src/core/auto'
+import { candidateFolders, checkJob, decideMove, findDuplicate, isOrganized, sameUrl, unfiledBookmarks } from '../src/core/auto'
 import { flattenTree } from '../src/core/tree'
 import { folder, link, treeOf } from '../src/core/memory-bookmarks'
 import type { AutoJob, AutoRecord, BookmarkMeta, Plan } from '../src/core/types'
@@ -62,7 +62,7 @@ describe('候选目录', () => {
   })
 })
 
-describe('没放好的（一键整理的范围）', () => {
+describe('还没放好的新收藏（角标、弹窗的 N，一键整理的范围）', () => {
   const base = (patch: Partial<Parameters<typeof unfiledBookmarks>[0]> = {}) =>
     unfiledBookmarks({
       flat: flattenTree(organizedTree()),
@@ -71,12 +71,24 @@ describe('没放好的（一键整理的范围）', () => {
       lockedIds: new Set(['LOCK']),
       keepLooseBarItems: true,
       organizedAt: NOW - 2 * DAY,
-      now: NOW,
+      placed: new Set(),
       ...patch
     }).map((b) => b.id)
 
-  it('待整理里的、其他书签根下的、手机上的；不含锁定、待清理、整理前的空文件夹（里面新加的也不算）、散放、非 http', () => {
-    expect(base()).toEqual(['in1', 'o1', 'm1'])
+  it('其他书签根下的、手机上的（有说明也算）；不含待整理（在待处理里）、锁定、待清理、整理前的空文件夹（里面新加的也不算）、散放、非 http', () => {
+    expect(base()).toEqual(['o1', 'm1'])
+  })
+
+  it('K1 待整理里放着 6 条、别处没有要放的：N 是 0', () => {
+    const flat = flattenTree(treeOf([folder('前端', [], 'FE')], [folder('待整理', [0, 1, 2, 3, 4, 5].map((i) => link(`拿不准 ${i}`, `https://in.com/${i}`, { dateAdded: NOW - 1000 }, `i${i}`)), 'FIN')]))
+    expect(base({ flat, meta: {} })).toEqual([])
+  })
+
+  it('K3 你定过位置的不算：散放的、新加的都一样', () => {
+    expect(base({ placed: new Set(['o1']) })).toEqual(['m1'])
+    const flat = flattenTree(treeOf([folder('前端', [link('新收藏', 'https://new.com', { dateAdded: NOW - 1000 }, 'n1')], 'FE')]))
+    expect(base({ flat, meta: {} })).toEqual(['n1'])
+    expect(base({ flat, meta: {}, placed: new Set(['n1']) })).toEqual([])
   })
 
   it('整理之后新加、还没有说明的也算（锁定的除外）', () => {
@@ -86,10 +98,9 @@ describe('没放好的（一键整理的范围）', () => {
     expect(base({ flat, meta: {} })).toEqual(['n1'])
   })
 
-  it('撤销过、用户挪过的不算；7 天内试过还在待整理的不算，过了 7 天再算', () => {
-    expect(base({ records: { in1: rec('in1', 'undone'), o1: rec('o1', 'moved-by-user') } })).toEqual(['m1'])
-    expect(base({ records: { in1: rec('in1', 'inbox', NOW - 1000) } })).toEqual(['o1', 'm1'])
-    expect(base({ records: { in1: rec('in1', 'inbox', NOW - RETRY_AFTER_MS - 1) } })).toEqual(['in1', 'o1', 'm1'])
+  it('撤销过、用户挪过的不算；待整理里的过多久都不算（不再 7 天后重新算）', () => {
+    expect(base({ records: { o1: rec('o1', 'undone'), m1: rec('m1', 'moved-by-user') } })).toEqual([])
+    expect(base({ records: { in1: rec('in1', 'inbox', NOW - 30 * DAY) } })).toEqual(['o1', 'm1'])
   })
 
   it('散放的设置关掉后，书签栏上散放的、整理后新加的也算', () => {

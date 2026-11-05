@@ -8,8 +8,6 @@ import type { ApplyLog, AutoJob, AutoRecord, BookmarkMeta, FlatBookmark, FlatTre
 export const AUTO_DELAY_MS = 8000
 /** 一键整理不超过这么多条时直接放，多了先让用户确认去向 */
 export const BUTTON_DIRECT_MAX = 10
-/** 进了待整理的，这么久之内不再算「没放好」 */
-export const RETRY_AFTER_MS = 7 * 86400000
 /** 自动放好之后这么久之内被用户挪走，记一次「又挪走」 */
 export const MOVED_AGAIN_MS = 7 * 86400000
 /**
@@ -71,10 +69,11 @@ function scopeOf(flat: FlatTree) {
 }
 
 /**
- * B（一键整理）的范围：书签栏、其他书签、移动设备书签下「没放好」的。
- * 排除：锁定的、「待清理」「整理前的空文件夹」里的、书签栏上散放的（跟一期设置）、非 http(s) 的、
- * 用户撤销过或自己挪过的、7 天内试过还进了待整理的。
- * 算进来：在「待整理」里的；在其他书签或移动设备书签根下直接放着的；最近一次应用之后新加、还没有说明的。
+ * 还没放好的新收藏：工具栏角标和弹窗「放好 N 条」的 N，也是一键整理的范围。
+ * 算进来：在其他书签或移动设备书签根下直接放着的；最近一次一期应用之后新加、还没有说明的（撤销、恢复重建出来的不算新加）。
+ * 排除：锁定的；「待整理」里的（在管理页「待处理」里处理）；「待清理」「整理前的空文件夹」里的；书签栏上散放的（跟一期设置）；
+ * 非 http(s) 的；你定过位置的（placed）；自动整理记录是你撤销过、自己挪走过的。
+ * 「有说明」只用来判断新加的：根下散放的有说明也算（整理页生成方案会先补说明，生成了不应用时，散放的不会从 N 里悄悄消失）。
  */
 export function unfiledBookmarks(input: {
   flat: FlatTree
@@ -82,34 +81,32 @@ export function unfiledBookmarks(input: {
   records: Record<string, AutoRecord>
   lockedIds: Set<string>
   keepLooseBarItems: boolean
-  /** 最近一次「完成」的应用开始的时间 */
+  /** 最近一次「完成」的一期应用开始的时间 */
   organizedAt: number
-  now: number
-  /** 撤销、恢复重建出来的书签：id 是新的、没有说明，但不是新收藏，不算「新加的」（放在待整理、根下的照样算） */
+  /** 撤销、恢复重建出来的书签：id 是新的、没有说明，但不是新收藏，不算「新加的」（放在根下的照样算） */
   own?: Set<string>
+  /** 你定过位置的（store 的 handPlaced） */
+  placed: Set<string>
 }): FlatBookmark[] {
-  const { flat, meta, records, now } = input
+  const { flat, meta, records, placed } = input
   const own = input.own ?? new Set<string>()
   const s = scopeOf(flat)
   const locked = descendantFolderIds(flat, [...input.lockedIds])
   const parked = descendantFolderIds(
     flat,
-    s.special.flatMap((sp) => [sp.cleanup, sp.holding]).filter((x): x is string => !!x)
+    s.special.flatMap((sp) => [sp.inbox, sp.cleanup, sp.holding]).filter((x): x is string => !!x)
   )
-  const inboxes = new Set(s.special.map((sp) => sp.inbox).filter((x): x is string => !!x))
   const roots = new Set([...s.bars, ...s.others, ...s.mobiles])
   return flat.bookmarks.filter((b) => {
-    if (!roots.has(b.rootId) || !/^https?:\/\//i.test(b.url)) return false
+    if (!roots.has(b.rootId) || !/^https?:\/\//i.test(b.url) || placed.has(b.id)) return false
     if (isUnderFolders(b, locked) || isUnderFolders(b, parked)) return false
     if (input.keepLooseBarItems && s.bars.includes(b.rootId) && b.depth === 1) return false
     const r = records[b.id]
     if (r && (r.status === 'undone' || r.status === 'moved-by-user')) return false
-    if (r && r.status === 'inbox' && now - r.at < RETRY_AFTER_MS) return false
-    const inInbox = b.folderIds.some((id) => inboxes.has(id))
     const looseInOther = s.others.includes(b.rootId) && b.depth === 1
     const looseInMobile = s.mobiles.includes(b.rootId) && b.depth === 1
     const fresh = !meta[b.id] && b.dateAdded > input.organizedAt && !own.has(b.id)
-    return inInbox || looseInOther || looseInMobile || fresh
+    return looseInOther || looseInMobile || fresh
   })
 }
 
