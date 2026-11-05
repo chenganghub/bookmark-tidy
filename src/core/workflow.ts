@@ -5,7 +5,7 @@ import { addUsage, createChatJson, EMPTY_USAGE, estimateCostUsd, testConnection 
 import { alignToSnapshot, applyPlan, undoApply } from './apply'
 import { createFetchQueue, fetchPage, planFetch } from './fetcher'
 import { ensureFolder, moveBookmarks, removeBookmarks, removeFolders, revertChange } from './manual'
-import { buildPlan, effectiveLockedIds, oversizedLeaves, participants, splitFolder, splitTakenNames, validatePlan } from './plan'
+import { buildPlan, describeScope, effectiveLockedIds, oversizedLeaves, participants, splitFolder, splitTakenNames, validatePlan } from './plan'
 import { leafPaths } from './prompts'
 import { runClassify, runDescribe, runSplit, runTaxonomy } from './pipeline'
 import { audit, cleanTitle } from './rules'
@@ -13,7 +13,7 @@ import { sanitizeText, sanitizeUrlForAi, truncate } from './sanitize'
 import { parseBackup, serializeSnapshot, takeSnapshot } from './snapshot'
 import { browserLocks, createMutationLock, type MutationLock } from './locks'
 import { chromeKV, createStore } from './store'
-import { descendantFolderIds, flattenTree, isUnderFolders, pickRoot } from './tree'
+import { descendantFolderIds, flattenTree, pickRoot } from './tree'
 import { buildTriage } from './triage'
 import type { AiUsage, ApplyLog, BookmarkMeta, BookmarksApi, ChatJsonFn, FlatBookmark, FlatTree, KV, Plan, PlanOptions, RootInfo, Settings, StageProgress, TaxonomyNode, Workflow } from './types'
 
@@ -82,11 +82,10 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
 
   const emptyMeta = (): BookmarkMeta => ({ desc: '', title: '', tags: [], type: '其他', updatedAt: 0 })
 
-  /** 书签栏、其他书签下（锁定的除外）的书签：「生成说明」的范围 */
-  function describeScope(flat: FlatTree, s: Settings): FlatBookmark[] {
+  /** 写说明的范围（plan.ts 的 describeScope，整理页的条数也按它数） */
+  function describeTargets(flat: FlatTree, s: Settings): FlatBookmark[] {
     const { bar, other } = roots(flat)
-    const locked = descendantFolderIds(flat, lockedIds(flat, s))
-    return flat.bookmarks.filter((b) => (b.rootId === bar.id || b.rootId === other.id) && !isUnderFolders(b, locked))
+    return describeScope(flat, lockedIds(flat, s), bar.id, other.id)
   }
 
   /** 给 scope 里还没有说明的写说明；都有了就不发请求、也不报进度 */
@@ -189,7 +188,7 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
       const s = await settings()
       requireKey(s)
       const { flat } = await loadTree()
-      return describeMissing(s, describeScope(flat, s), onProgress, signal)
+      return describeMissing(s, describeTargets(flat, s), onProgress, signal)
     },
 
     async buildPlan(options: PlanOptions, onProgress, signal) {
@@ -201,9 +200,8 @@ export function createWorkflow(deps: WorkflowDeps = {}): Workflow {
       const scope = participants(flat, options, bar.id, other.id)
       // 先看有没有要整理的，再花钱写说明
       if (!scope.length) throw new Error('没有要整理的书签')
-      // 整理页只有「生成方案」一个按钮：参与这次整理、还没有说明的先写说明，再设计目录、归类。
-      // 只写参与的：散放不动的、待清理里的不写（不然生成了方案又不应用，它们会悄悄有了说明、从角标里消失）
-      const pre = await describeMissing(s, scope, onProgress, signal)
+      // 整理页只有「生成方案」一个按钮：还没有说明的先写说明（和原来「生成说明」的范围一样），再设计目录、归类
+      const pre = await describeMissing(s, describeTargets(flat, s), onProgress, signal)
       const meta = await store.getMeta()
       const pages = await store.getPageInfos()
 

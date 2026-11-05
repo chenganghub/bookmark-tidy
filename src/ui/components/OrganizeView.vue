@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 整理页：按 ① 抓取网页信息（能跳过）② 生成方案（先给没有说明的写说明）③ 检查方案 ④ 应用 排列（bookmark-ux O1）
 import { computed, onMounted, ref, watch } from 'vue'
-import { participants, planStats, reusedFolders } from '../../core/plan'
+import { describeScope, planStats, reusedFolders } from '../../core/plan'
 import type { AiUsage, Plan, PlanOptions, StageProgress } from '../../core/types'
 import { downloadText, errorText, money, stampForFile } from '../format'
 import { applyNotice, lockedIds, reload, roots, saveSettings, state, workflow } from '../state'
@@ -24,12 +24,12 @@ const options = computed<PlanOptions>(() => ({
   keepLooseBarItems: s.value.keepLooseBarItems
 }))
 
-/** 参与整理、还没有说明的条数：生成方案时先给它们写说明 */
+/** 还没有说明的条数：生成方案时先给它们写说明（和 workflow 用同一个范围，条数和实际写的对得上） */
 const missing = computed(() => {
   const f = state.flat
   const { bar, other } = roots.value
   if (!f || !bar || !other) return 0
-  return participants(f, options.value, bar.id, other.id).filter((b) => !state.meta[b.id]).length
+  return describeScope(f, [...lockedIds.value], bar.id, other.id).filter((b) => !state.meta[b.id]).length
 })
 
 const plan = ref<Plan>()

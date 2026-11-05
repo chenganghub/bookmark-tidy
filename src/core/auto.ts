@@ -126,10 +126,10 @@ export function checkJob(job: AutoJob, flat: FlatTree, ctx: { lockedIds: Set<str
   if (b.url !== job.url) return { drop: 'url-changed' }
   if (isUnderFolders(b, descendantFolderIds(flat, [...ctx.lockedIds]))) return { drop: 'locked' }
   const s = scopeOf(flat)
-  // 收藏时你自己选了「待整理」：算你定了先放着，不再自动挪（和 N 的口径一致：待整理里的不算）
+  // 待整理里的照样处理：Chrome 记住上次在收藏气泡里选的文件夹，选过一次待整理，以后收藏默认就进待整理（二期 A1）
   const parked = descendantFolderIds(
     flat,
-    s.special.flatMap((sp) => [sp.inbox, sp.cleanup, sp.holding]).filter((x): x is string => !!x)
+    s.special.flatMap((sp) => [sp.cleanup, sp.holding]).filter((x): x is string => !!x)
   )
   if (isUnderFolders(b, parked)) return { drop: 'parked' }
   return { userMoved: b.parentId !== job.parentId, userRetitled: b.title !== job.title }

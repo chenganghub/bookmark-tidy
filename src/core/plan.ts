@@ -57,6 +57,12 @@ export function participants(flat: FlatTree, options: PlanOptions, barRootId: st
   )
 }
 
+/** 要写说明的范围：书签栏和其他书签下、不在锁定文件夹里的（比参与整理的宽：散放的、待清理里的也写，搜索和卡片都用得上）。整理页显示的「先给 N 条写说明」也按它数 */
+export function describeScope(flat: FlatTree, lockedFolderIds: string[], barRootId: string, otherRootId: string): FlatBookmark[] {
+  const locked = descendantFolderIds(flat, lockedFolderIds)
+  return flat.bookmarks.filter((b) => (b.rootId === barRootId || b.rootId === otherRootId) && !isUnderFolders(b, locked))
+}
+
 const byNumericId = (a: string, b: string) => a.localeCompare(b, 'en', { numeric: true })
 
 /** 重复的一组里留哪条：最近打开过的 → 最早加的 → id 最小的 */

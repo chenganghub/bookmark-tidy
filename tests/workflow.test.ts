@@ -431,11 +431,12 @@ describe('bookmark-ux：待处理和手动操作', () => {
     expect(seen.slice(n).map((s) => s.stage)).not.toContain('describe')
   })
 
-  it('O1 生成方案只给参与这次整理的写说明：散放不动的不写（不然它会悄悄从角标里消失）；没有要整理的就不花钱写', async () => {
+  it('O1 生成方案写说明的范围和原来「生成说明」一样（散放的也写，锁定的不写）；没有要整理的就不花钱写', async () => {
     const { wf, seen } = setup()
     await wf.buildPlan(planOptions(), () => {})
-    expect(seen.find((s) => s.stage === 'describe')!.user).not.toContain('loose |')
-    expect((await wf.getMeta()).loose).toBeUndefined()
+    const user = seen.find((s) => s.stage === 'describe')!.user
+    expect(user).toContain('loose |')
+    expect(user).not.toContain('w1 |')
     const lonely = setup({ tree: treeOf([link('只有散放的', 'https://a.com', {}, 'a')]) })
     await expect(lonely.wf.buildPlan(planOptions(), () => {})).rejects.toThrow('没有要整理的书签')
     expect(lonely.seen).toEqual([])
