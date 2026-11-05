@@ -1,0 +1,185 @@
+/* 工具栏弹窗（二期）的样式：只在弹窗里加载（entrypoints/popup/main.ts），变量和通用控件在 ../styles.css。数值见 docs/设计规范.md */
+
+body.popup {
+  width: 360px;
+  min-height: 0;
+  background: var(--surface);
+}
+
+.pop {
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.pop-search {
+  width: 100%;
+  margin: 0;
+}
+
+.pop-main {
+  display: grid;
+  gap: 8px;
+}
+
+.pop-gate,
+.pop-progress,
+.pop-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+/* 一键整理的结果：一行文字（会换行），下面是「去处理」「撤销这次」 */
+.pop-result {
+  display: grid;
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+.pop-links {
+  display: flex;
+  gap: 16px;
+}
+
+/* 「N 条新收藏还没放好」「新收藏都放好了」 */
+.pop-note {
+  font-size: 12px;
+  line-height: 16px;
+  padding: 0 8px;
+}
+
+.pop-done {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+}
+
+/* 「待处理 M ›」：整行能点，去管理页 */
+.pop-pending {
+  min-height: 36px;
+}
+
+.pop-pending .icon {
+  color: var(--secondary);
+}
+
+.pop-gate .link,
+.pop-progress .small {
+  margin-left: auto;
+}
+
+.pop-progress progress {
+  flex: 1;
+}
+
+.pop-run {
+  width: 100%;
+}
+
+.pop-actions {
+  justify-content: flex-end;
+}
+
+.pop-section {
+  display: grid;
+  gap: 4px;
+}
+
+.pop-head {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--secondary);
+  padding: 0 8px;
+}
+
+.pop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.pop-preview {
+  max-height: 260px;
+  overflow: auto;
+}
+
+.pop-row,
+.pop-rec {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  transition: background-color var(--t);
+}
+
+.pop-row {
+  cursor: pointer;
+}
+
+.pop-row:hover,
+.pop-rec:hover {
+  background: var(--fill-hover);
+}
+
+.pop-text {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+
+.pop-title,
+.pop-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pop-sub {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--secondary);
+}
+
+/* 行内操作平时隐藏，悬停或键盘聚焦这一行时淡入（同管理页规则 8） */
+.pop-undo {
+  opacity: 0;
+  transition: opacity var(--t);
+}
+
+.pop-rec:hover .pop-undo,
+.pop-undo:focus-visible {
+  opacity: 1;
+}
+
+.pop-empty {
+  display: grid;
+  place-items: center;
+  min-height: 80px;
+}
+
+.pop-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+.pop-foot .link {
+  margin-left: auto;
+}
+
+.pop-error {
+  padding: 0 8px;
+}

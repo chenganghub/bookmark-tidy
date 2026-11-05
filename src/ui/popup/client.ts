@@ -14,7 +14,7 @@ export interface PopupClient {
   /** 后台写了进度、记录、计数时回调 */
   onChange(cb: () => void): void
   open(url: string): void
-  openManager(view?: 'organize' | 'settings', query?: string): void
+  openManager(view?: 'organize' | 'settings' | 'triage', query?: string): void
   requestPermission(): Promise<boolean>
 }
 
@@ -60,7 +60,7 @@ async function realClient(): Promise<PopupClient> {
     },
     openManager(view, query) {
       const qs = new URLSearchParams()
-      if (view === 'organize') qs.set('view', 'organize')
+      if (view === 'organize' || view === 'triage') qs.set('view', view)
       if (view === 'settings') qs.set('settings', '1')
       if (query) qs.set('q', query)
       const s = qs.toString()
@@ -97,18 +97,20 @@ function demoClient(stateName: string): PopupClient {
         ? { id: 'b1', phase: 'preview', total: 12, done: 12, startedAt: D, items: previewItems }
         : stateName === 'result'
           ? { id: 'b1', phase: 'done', total: 9, done: 9, startedAt: D, result: { filed: 7, toInbox: 2, skipped: 0 } }
-          : undefined
+          : stateName === 'partial'
+            ? { id: 'b1', phase: 'done', total: 3, done: 3, startedAt: D, result: { filed: 2, toInbox: 0, skipped: 0, failed: 1, error: '接口拒绝访问（HTTP 401），检查 API key' } }
+            : undefined
   const status: AutoStatus = {
     organized: stateName !== 'gate',
     autoFile: true,
     hasPermission: true,
     hasKey: true,
-    unfiled: stateName === 'result' ? 0 : stateName === 'empty' ? 0 : 3,
+    unfiled: stateName === 'result' || stateName === 'empty' ? 0 : stateName === 'partial' ? 1 : 3,
     pending: stateName === 'empty' ? 0 : 4,
     stats: { filed: 12, toInbox: 3, undone: 1, movedAgain: 0, omnibox: 5, buttonRuns: 2 },
     recent: stateName === 'empty' ? [] : recent,
     batch,
-    lastBatch: stateName === 'result' ? 'b1' : undefined
+    lastBatch: stateName === 'result' || stateName === 'partial' ? 'b1' : undefined
   }
   const entries: SearchEntry[] = recent.map((r, i) => ({
     id: r.bookmarkId,

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// 工具栏弹窗：搜索框、「整理 N 条」、一键整理的进度 / 预览 / 结果、最近自动放的几条、本机计数。
-// 规则同管理页（docs/设计规范.md）：一个主色、同一时刻一个主按钮、不放解释性文案。
+// 工具栏弹窗：搜索框、「放好 N 条」（N 是还没放好的新收藏，和工具栏角标同一个数）、一键整理的进度 / 预览 / 结果、
+// 待处理 M（去管理页处理拿不准的、建议删除的）、最近自动放的几条。
+// 规则同管理页（docs/设计规范.md）：一个主色、同一时刻一个主按钮；要你拿主意的地方一行说明。本机计数照存，不显示。
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { AutoStatus } from '../../core/autofile'
 import type { SearchEntry } from '../../core/search'
@@ -164,11 +165,14 @@ async function onEnter() {
 const resultLine = computed(() => {
   const r = batch.value?.result
   if (!r) return ''
-  const parts = [`放好 ${r.filed}`]
-  if (r.toInbox) parts.push(`待整理 ${r.toInbox}`)
+  const parts = [`放好 ${r.filed} 条`]
+  if (r.toInbox) parts.push(`${r.toInbox} 条拿不准，在待整理里`)
+  // AI 请求失败的还算在 N 里，下次再点会再试
+  if (r.failed) parts.push(`${r.failed} 条没放成：${r.error}`)
   if (r.skipped) parts.push(`跳过 ${r.skipped}`)
   return parts.join(' · ')
 })
+const triage = () => client.value!.openManager('triage')
 const statusText: Record<string, string> = { undone: '已撤销', 'moved-by-user': '已挪走' }
 </script>
 
@@ -222,20 +226,33 @@ const statusText: Record<string, string> = { undone: '已撤销', 'moved-by-user
             <button class="btn btn-primary" type="button" :disabled="busy || !picked.size || submitted === batch.id" @click="apply">放好 {{ picked.size }} 条</button>
           </div>
         </template>
-        <div v-else-if="batch?.phase === 'done'" class="pop-gate">
+        <div v-else-if="batch?.phase === 'done'" class="pop-result">
           <span>{{ resultLine }}</span>
-          <!-- 一条都没放（AI 没给出能用的结果）时这批不占「最近一批」，只显示结果、没有「撤销这次」 -->
-          <button v-if="status.lastBatch === batch.id" class="link" type="button" :disabled="busy" @click="undoBatch">撤销这次</button>
+          <span class="pop-links">
+            <button v-if="batch.result?.toInbox" class="link" type="button" @click="triage">去处理</button>
+            <!-- 一条都没放（AI 没给出能用的结果）时这批不占「最近一批」，只显示结果、没有「撤销这次」 -->
+            <button v-if="status.lastBatch === batch.id" class="link" type="button" :disabled="busy" @click="undoBatch">撤销这次</button>
+          </span>
         </div>
         <div v-else-if="batch?.phase === 'failed'" class="pop-gate">
           <span class="secondary">{{ batch.error }}</span>
         </div>
-        <div v-if="!gate && batch?.phase !== 'running' && batch?.phase !== 'preview'" class="pop-run-row">
-          <button v-if="status.unfiled" class="btn btn-primary pop-run" type="button" :disabled="busy" @click="run">整理 {{ status.unfiled }} 条</button>
-          <button v-else class="btn pop-run" type="button" disabled>整理</button>
-        </div>
+        <template v-if="!gate && batch?.phase !== 'running' && batch?.phase !== 'preview'">
+          <template v-if="status.unfiled">
+            <p class="pop-note secondary">{{ status.unfiled }} 条新收藏还没放好</p>
+            <button class="btn btn-primary pop-run" type="button" :disabled="busy" @click="run">放好 {{ status.unfiled }} 条</button>
+          </template>
+          <p v-else class="pop-note pop-done secondary"><Icon name="check" :size="14" />新收藏都放好了</p>
+        </template>
         <p v-if="error" class="secondary small pop-error" role="alert">{{ error }}</p>
       </section>
+
+      <!-- 拿不准放哪的、建议删除的：在管理页「待处理」里处理 -->
+      <button v-if="status.pending" class="pop-row pop-pending" type="button" @click="triage">
+        <span class="pop-text">待处理</span>
+        <span class="secondary">{{ status.pending }}</span>
+        <Icon name="chevron" :size="14" />
+      </button>
 
       <section v-if="status.recent.length" class="pop-section" aria-labelledby="recent-title">
         <h2 id="recent-title" class="pop-head">最近收藏</h2>
@@ -252,7 +269,6 @@ const statusText: Record<string, string> = { undone: '已撤销', 'moved-by-user
       </section>
 
       <footer class="pop-foot secondary small">
-        <span>自动放 {{ status.stats.filed }} · 待整理 {{ status.stats.toInbox }} · 撤销 {{ status.stats.undone }} · 又挪走 {{ status.stats.movedAgain }} · 地址栏 {{ status.stats.omnibox }}</span>
         <button class="link small" type="button" @click="client!.openManager()">管理页</button>
       </footer>
     </template>

@@ -121,6 +121,11 @@ export default defineBackground(() => {
   // ---------------------------------------------------------------- 通知按钮
 
   async function openFolderOf(bookmarkId: string) {
+    // 进了待整理的（AI 拿不准）：去管理页「待处理」给它定位置；放进目录的：打开 Chrome 书签管理器里它所在的文件夹
+    if ((await store.getRecord(bookmarkId))?.status === 'inbox') {
+      await browser.tabs.create({ url: browser.runtime.getURL('/manager.html?view=triage') })
+      return
+    }
     const node = (await browser.bookmarks.get(bookmarkId).catch(() => []))[0]
     await browser.tabs.create({ url: `chrome://bookmarks/?id=${node?.parentId ?? ''}` })
   }
