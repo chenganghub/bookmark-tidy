@@ -237,13 +237,18 @@ try {
   const plainBody = requestFor(b.unsure)[0]?.body ?? ''
   record('T1-非白名单', plainBody && !plainBody.includes('正文开头'), `不在白名单的网站：请求里没有正文片段`)
 
-  // A5：通知；撤销按钮、改位置按钮
+  // A5：通知；撤销按钮、改位置按钮。O4：进了待整理的那条点「改位置」打开管理页的待处理，放进目录的打开 Chrome 书签管理器
   const nPub = notices[`bt:${b.pub}`] !== undefined
   const before = await ev(`chrome.bookmarks.get(${JSON.stringify(b.pub)}).then((r) => r[0])`)
+  const pageUrls = async () => (await browser.cdp.send('Target.getTargets')).targetInfos.map((t) => t.url)
   await send('e2e:notice-button', { nid: `bt:${b.unsure}`, button: 1 })
   await sleep(500)
-  const targets = (await browser.cdp.send('Target.getTargets')).targetInfos
-  const bmTab = targets.some((t) => t.url.startsWith(`chrome://bookmarks/?id=${inbox}`))
+  const triageTab = (await pageUrls()).some((u) => u === `chrome-extension://${browser.extId}/manager.html?view=triage`)
+  const inboxBmTab = (await pageUrls()).some((u) => u.startsWith(`chrome://bookmarks/?id=${inbox}`))
+  record('O4', triageTab && !inboxBmTab, `进了待整理的那条点「改位置」：打开管理页的待处理 ${triageTab}；没打开 Chrome 书签管理器 ${!inboxBmTab}`)
+  await send('e2e:notice-button', { nid: `bt:${b.pub}`, button: 1 })
+  await sleep(500)
+  const bmTab = (await pageUrls()).some((u) => u.startsWith(`chrome://bookmarks/?id=${ids.vue}`))
   await send('e2e:notice-button', { nid: `bt:${b.pub}`, button: 0 })
   await sleep(500)
   const undone = await node(b.pub)
@@ -251,7 +256,7 @@ try {
   const pubNotice = noticeOf(b.pub)
   const noticeOk = pubNotice?.title === '已放进「前端/Vue」' && !!pubMeta?.desc && pubNotice?.message === pubMeta.desc && pubNotice?.buttons.join() === '撤销,改位置'
   record('A5', nPub && noticeOk && undone.parentId === ids.other && undone.title === 'Vue 响应式原理1-CSDN博客' && (await local(`autorec:${b.pub}`))?.status === 'undone' && afterNotices[`bt:${b.pub}`] === undefined && bmTab,
-    `通知有：${nPub}；标题「${pubNotice?.title}」，正文「${pubNotice?.message}」= 存下的说明：${pubNotice?.message === pubMeta?.desc}，按钮「${pubNotice?.buttons.join('」「')}」；点「撤销」后回到原处 ${undone.parentId === ids.other}、标题改回「${undone.title}」；通知关掉；点「改位置」打开了 chrome://bookmarks 里它所在的文件夹：${bmTab}；撤销前在 ${before.parentId === ids.vue ? '前端/Vue' : before.parentId}`)
+    `通知有：${nPub}；标题「${pubNotice?.title}」，正文「${pubNotice?.message}」= 存下的说明：${pubNotice?.message === pubMeta?.desc}，按钮「${pubNotice?.buttons.join('」「')}」；点「撤销」后回到原处 ${undone.parentId === ids.other}、标题改回「${undone.title}」；通知关掉；放进「前端/Vue」的那条点「改位置」打开了 chrome://bookmarks 里它所在的文件夹：${bmTab}；撤销前在 ${before.parentId === ids.vue ? '前端/Vue' : before.parentId}`)
 
   // ---------------------------------------------------------------- 第 2 轮：A4 一期操作进行中收藏的、重建的
   // 和真的一样：一期的操作在管理页里拿着同一把锁；应用、撤销进行中，最近一次应用的状态是 running / undoing；从备份恢复不改状态
@@ -344,11 +349,11 @@ try {
   const done1 = await waitBatch('done')
   const after1 = await send('auto:status')
   const noTabNow = await parentOf(b.noTab)
-  // 通知里点过「撤销」的那条（A5）也在其他书签根下，但用户撤销过，不算；进过待整理（7 天内）的那条也不算
+  // 通知里点过「撤销」的那条（A5）也在其他书签根下，但用户撤销过，不算；待整理里的那条（bookmark-ux K1）不算
   const undoneStays = (await parentOf(b.pub)) === ids.other
   const unsureStays = (await parentOf(b.unsure)) === unsureParent
-  record('B1', st0.unfiled === 5 && done1.result.filed + done1.result.toInbox === 5 && noTabNow === ids.vue && undoneStays && unsureStays && after1.unfiled === 0,
-    `「整理 ${st0.unfiled} 条」= 其他书签根下、自动整理没处理过的 5 条：没开标签页收藏的、一期撤销中和撤销后（自动整理停着）收藏的 2 条、8 秒内重复收藏的第一条、撤销或恢复重建出来的。放好 ${done1.result.filed}、待整理 ${done1.result.toInbox}、跳过 ${done1.result.skipped}；没开标签页那条放进了「前端/Vue」：${noTabNow === ids.vue}；通知里点过「撤销」的那条没算、留在原处：${undoneStays}；7 天内进过待整理的没算、没被挪：${unsureStays}；之后还剩 ${after1.unfiled}`)
+  record('K1', st0.unfiled === 5 && st0.pending >= 1 && done1.result.filed + done1.result.toInbox === 5 && noTabNow === ids.vue && undoneStays && unsureStays && after1.unfiled === 0,
+    `「放好 ${st0.unfiled} 条」= 其他书签根下、AI 还没看过的 5 条：没开标签页收藏的、一期撤销中和撤销后（自动整理停着）收藏的 2 条、8 秒内重复收藏的第一条、撤销或恢复重建出来的。待整理里的那条不算、没被挪：${unsureStays}（待处理 M = ${st0.pending}）；通知里点过「撤销」的那条没算、留在原处：${undoneStays}。放好 ${done1.result.filed}、进待整理 ${done1.result.toInbox}、跳过 ${done1.result.skipped}；没开标签页那条放进了「前端/Vue」：${noTabNow === ids.vue}；之后还剩 ${after1.unfiled}（K2）`)
   const batch1 = after1.lastBatch
   const undoneN = await send('auto:undo-batch', { batchId: batch1 })
   record('B3', undoneN >= 1 && (await parentOf(b.noTab)) === ids.other, `「撤销这次」移回 ${undoneN} 条；没开标签页那条回到原处：${(await parentOf(b.noTab)) === ids.other}`)
@@ -369,8 +374,12 @@ try {
   await send('auto:apply-batch', { batchId: preview.id, ids: [many[1], many[2]] })
   const done2 = await waitBatch('done')
   const moved2 = await Promise.all(many.map(parentOf))
+  const after2 = await send('auto:status')
   record('B2', preview.items.length >= 12 && listOk && unmovedDuringPreview && moved2[1] === ids.ai && moved2[2] === ids.ai && moved2.slice(3).every((p) => p === ids.other),
     `超过 10 条（${preview.items.length} 条）先出预览；弹窗里列出 ${shownRows.length} 行，每行写着去向（如「${shownRows[0]?.title}」→「${shownRows[0]?.path}」「${shownRows[1]?.title}」→「${shownRows[1]?.path}」）、默认勾上：${listOk}；预览期间一条没动：${unmovedDuringPreview}；只勾 2 条，放好 ${done2.result.filed}、跳过 ${done2.result.skipped}；没勾的都没动`)
+  const placed = (await local('handPlaced')) ?? []
+  record('K2-预览没勾的', after2.unfiled === 0 && many.slice(3).every((id) => placed.includes(id)),
+    `预览里没勾的 ${many.length - 2} 条记成你定过位置：${many.slice(3).every((id) => placed.includes(id))}；之后「放好 N 条」的 N = ${after2.unfiled}`)
 
   // ---------------------------------------------------------------- C1 地址栏
   const sugg = await send('e2e:search', { q: '响应式 原理' })
@@ -384,13 +393,23 @@ try {
   record('C1', sugg.length >= 1 && sugg.length <= 6 && sugg[0].content === urls.pub && /<dim>/.test(sugg[0].description) && mgrTab && openedUrl,
     `「s 响应式 原理」出 ${sugg.length} 条建议，第一条是那篇公开文章；描述「${sugg[0]?.description}」；选建议打开网页：${openedUrl}；直接回车打开管理页带上搜索词：${mgrTab}`)
 
-  // ---------------------------------------------------------------- K2 计数、角标、T4 key
+  // ---------------------------------------------------------------- K8 计数照存、K1 角标 = N、K4 角标开关、T4 key
   await ev(`chrome.bookmarks.move(${JSON.stringify(b.priv)}, { parentId: ${JSON.stringify(ids.css)} })`)
+  // 一条没开标签页的新书签散放在其他书签根下：N = 1，角标开关才看得出区别
+  await create(ids.other, '没开标签页的新收藏', U('plain.bt-test', '/badge'))
   await sleep(800)
   const st = await send('auto:status')
   const badge = await send('e2e:badge')
-  record('K2', st.stats.filed >= 4 && st.stats.toInbox >= 1 && st.stats.undone >= 2 && st.stats.movedAgain === 1 && st.stats.omnibox >= 2 && String(st.unfiled || '') === badge,
-    `计数：自动放 ${st.stats.filed}、进待整理 ${st.stats.toInbox}、撤销 ${st.stats.undone}、又挪走 ${st.stats.movedAgain}、地址栏 ${st.stats.omnibox}；角标「${badge}」= 没放好 ${st.unfiled}`)
+  record('K8', st.stats.filed >= 4 && st.stats.toInbox >= 1 && st.stats.undone >= 2 && st.stats.movedAgain === 1 && st.stats.omnibox >= 2,
+    `计数照样存在本机（弹窗不显示）：自动放 ${st.stats.filed}、进待整理 ${st.stats.toInbox}、撤销 ${st.stats.undone}、又挪走 ${st.stats.movedAgain}、地址栏 ${st.stats.omnibox}`)
+  record('K1-角标', st.unfiled === 1 && badge === '1', `角标「${badge}」= 弹窗的 N ${st.unfiled}`)
+  const setBadge = (on) => ev(`chrome.storage.local.get('settings').then((r) => chrome.storage.local.set({ settings: { ...r.settings, badge: ${on} } }))`)
+  await setBadge(false)
+  const badgeOff = await send('e2e:badge')
+  const nOff = (await send('auto:status')).unfiled
+  await setBadge(true)
+  const badgeOn = await send('e2e:badge')
+  record('K4', badgeOff === '' && nOff === 1 && badgeOn === '1', `设置里关掉「工具栏角标」：角标「${badgeOff}」，弹窗的 N 照样是 ${nOff}；打开后角标「${badgeOn}」`)
 
   const stored = await ev(`Promise.all([chrome.storage.local.get(null), chrome.storage.session.get(null)]).then(([l, s]) => { delete l.settings; return JSON.stringify(l) + JSON.stringify(s) })`)
   const inBodies = aiRequests.some((r) => r.body.includes(KEY))
@@ -430,6 +449,17 @@ try {
   await sleep(1000)
   const m1 = await managerTabs()
   record('P1-弹窗', m1 === m0 + 1, `弹窗里点「管理页」：管理页的标签页 ${m0} → ${m1}`)
+
+  // ---------------------------------------------------------------- K6 弹窗里的「待处理 M」打开管理页的待处理
+  const pt = await browser.open('popup.html')
+  const pendingText = await pt.waitFor(`document.querySelector('.pop-pending')?.textContent.replace(/\\s+/g, '') ?? null`, 15000).catch(() => null)
+  const triageTabs = async () => (await pageUrls()).filter((u) => u === `chrome-extension://${browser.extId}/manager.html?view=triage`).length
+  const triage0 = await triageTabs()
+  await pt.evaluate(`(document.querySelector('.pop-pending').click(), true)`).catch(() => {})
+  await sleep(1000)
+  const triage1 = await triageTabs()
+  const pendingNow = (await send('auto:status')).pending
+  record('K6', pendingText === `待处理${pendingNow}` && pendingNow > 0 && triage1 === triage0 + 1, `弹窗里「${pendingText}」（待处理 M = ${pendingNow}）；点了以后管理页的待处理标签页 ${triage0} → ${triage1}`)
   record('页面报错', ![...mgr.errors, ...pop.errors].length, `${[...mgr.errors, ...pop.errors].length} 条${[...mgr.errors, ...pop.errors].length ? '：' + [...mgr.errors, ...pop.errors].slice(0, 2).join(' | ') : ''}`)
 } catch (e) {
   exitCode = 1

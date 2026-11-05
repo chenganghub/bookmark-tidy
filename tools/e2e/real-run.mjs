@@ -256,7 +256,7 @@ try {
     )
   }
 
-  // ---------------------------------------------------------------- B3：打开体检页、浏览页没有对外请求
+  // ---------------------------------------------------------------- B3：打开待处理页（体检的统计收在它的「全部检查项」里）、浏览页没有对外请求
   {
     const net = await browser.newPage()
     const external = []
@@ -264,13 +264,13 @@ try {
       if (!/^(chrome-extension|data|blob|about|chrome):/.test(p.request.url)) external.push(p.request.url)
     })
     await net.send('Network.enable')
-    await net.goto(`chrome-extension://${browser.extId}/manager.html?view=audit`)
+    await net.goto(`chrome-extension://${browser.extId}/manager.html?view=triage`)
     await net.waitFor('document.querySelector(".stats .stat")', 20000)
     await sleep(2000)
     await net.goto(`chrome-extension://${browser.extId}/manager.html`)
     await net.waitFor('document.querySelector(".content .grid")', 20000)
     await sleep(3000)
-    record('B3', external.length === 0, `体检页和浏览页的对外请求 ${external.length} 个`)
+    record('B3', external.length === 0, `待处理页（含体检统计）和浏览页的对外请求 ${external.length} 个`)
     await net.close()
   }
 
