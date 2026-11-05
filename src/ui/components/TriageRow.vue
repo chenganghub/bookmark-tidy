@@ -38,7 +38,9 @@ function pick(e: Event) {
       <option v-for="c in choices" :key="c.id" :value="c.id">{{ c.id === guess?.id ? `${c.path}（AI 猜的）` : c.path }}</option>
       <option :value="NEW_FOLDER">新建文件夹…</option>
     </select>
-    <button v-if="guess" class="btn btn-small" type="button" :disabled="state.busy" @click="moveTo([b.id], { folderId: guess.id }, guess.path)">放进去</button>
+    <button v-if="guess" class="btn btn-small tri-put" type="button" :disabled="state.busy" @click="moveTo([b.id], { folderId: guess.id }, guess.path)">放进去</button>
+    <!-- 拿不准放哪的、AI 没猜的：留出「放进去」的位置，同一组里的「放到」上下对齐 -->
+    <span v-else-if="!entry.reason" class="tri-put" aria-hidden="true"></span>
     <button class="link tri-del" type="button" :disabled="state.busy" @click="removeMarks([b.id])">删除</button>
   </li>
 </template>

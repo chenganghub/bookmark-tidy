@@ -93,7 +93,7 @@ const SPEC = [
   ['.card .favicon', 'border-top-left-radius', '4px', '图标圆角'],
   ['.card-head', 'column-gap', '10px', '图标和标题间距'],
   ['.card-title', 'font-size', '14px', '卡片标题字号'],
-  ['.card-title', 'font-weight', '600', '卡片标题字重'],
+  ['.card-title', 'font-weight', '500', '卡片标题字重（500：Windows 上雅黑不发粗）'],
   ['.card-title', 'line-height', '20px', '卡片标题行高'],
   ['.card-desc', 'font-size', '13px', '卡片说明字号'],
   ['.card-desc', 'line-height', '18px', '卡片说明行高'],
@@ -215,6 +215,10 @@ try {
     return [...rows.values()].every((xs) => xs.every((x) => x.bottom === xs[0].bottom && x.height === xs[0].height))
   })()`)
   expect(rowsAligned, '同一行卡片等高、底栏对齐')
+  // 徽标只标要你注意的（失效、连不上、要登录、重复）；冷门、近期打开不挂，用筛选和排序看
+  const badgeTexts = await page.evaluate(`[...document.querySelectorAll('.grid .badge')].map((x) => x.textContent.trim())`)
+  const cardCount = await page.evaluate(`document.querySelectorAll('.grid .card').length`)
+  expect(badgeTexts.length > 0 && badgeTexts.every((t) => ['失效', '连不上', '要登录', '重复'].includes(t)), '卡片上的徽标只标要注意的（失效、连不上、要登录、重复）', `${cardCount} 张卡片上 ${badgeTexts.length} 个：${[...new Set(badgeTexts)].join('、')}`)
   const initials = await page.evaluate(`[...document.querySelectorAll('.favicon-letter')].map((x) => x.textContent.trim()).filter((t) => !/^[\\p{L}\\p{N}]$/u.test(t))`)
   expect(!initials.length, '首字母块都是字母、数字或汉字', JSON.stringify(initials))
   console.log(`  人工检查（超过 8 字的界面文字）：${JSON.stringify(await page.evaluate(TEXTS))}`)
@@ -397,7 +401,14 @@ try {
   const dlgColors = Object.entries(await page.evaluate(COLORS)).filter(([k]) => k !== '0,122,255')
   expect(!dlgColors.length, '设置对话框只有一个主色', JSON.stringify(dlgColors))
   console.log(`  人工检查（设置对话框超过 8 字的界面文字）：${JSON.stringify(await page.evaluate(TEXTS))}`)
+  // 两个网站名单不常改，默认收起在「网站名单」里；点开才看得到两个文本框
+  const more = await page.evaluate(`(() => { const d = document.querySelector('dialog[open] details.settings-more'); return { closed: !!d && !d.open, summary: d?.querySelector('summary').textContent.trim(), height: Math.round(document.querySelector('dialog[open]').getBoundingClientRect().height), areasShown: [...document.querySelectorAll('dialog[open] textarea')].filter((t) => t.checkVisibility()).length } })()`)
+  expect(more.closed && more.summary === '网站名单' && more.areasShown === 0, '设置里「网站名单」默认收起，两个文本框不常驻', `对话框高 ${more.height}px；${JSON.stringify(more)}`)
   await page.screenshot(shot('settings-light'))
+  await page.evaluate(`(document.querySelector('dialog[open] details.settings-more').open = true, true)`)
+  await sleep(150)
+  const shown = await page.evaluate(`[...document.querySelectorAll('dialog[open] textarea')].filter((t) => t.checkVisibility()).length`)
+  expect(shown === 2, '点开「网站名单」后两个文本框都在', `${shown} 个`)
   await page.evaluate(`(document.querySelector('dialog[open] textarea')?.scrollIntoView({ block: 'center' }), true)`)
   await sleep(200)
   await page.screenshot(shot('settings-auto-light'))
@@ -436,6 +447,8 @@ try {
   ]
   console.log('— 深色 · 设置对话框 —')
   check(DARK_DLG, await page.evaluate(collect(DARK_DLG)))
+  await page.evaluate(`(document.querySelector('dialog[open] details.settings-more').open = true, true)`)
+  await sleep(150)
   await page.evaluate(`(document.querySelector('dialog[open] textarea')?.scrollIntoView({ block: 'center' }), true)`)
   await sleep(200)
   await page.screenshot(shot('settings-auto-dark'), { dark: true })
@@ -736,6 +749,26 @@ try {
   expect(guessOpt.endsWith('（AI 猜的）') && lastOpt === '新建文件夹…', 'O3、T3 拿不准的预选 AI 猜的目录，最后一项「新建文件夹…」', `${guessOpt}；最后一项 ${lastOpt}`)
   await page.screenshot(shot('triage-light'), { fullPage: true })
   console.log(`  人工检查（待处理超过 8 字的界面文字）：${JSON.stringify(await page.evaluate(TEXTS))}`)
+  // 拿不准放哪：「放进去」宽 64px；AI 没猜的行留出同样宽的空位，「放到」下拉的位置不变（同一组上下对齐）。
+  // 演示数据里这一组只有一条、有猜测：临时把猜测拿掉看空位，再放回去
+  const putSlot = await page.evaluate(`(async () => {
+    const row = () => document.querySelector('.tri .tri-row')
+    const measure = () => ({ put: Math.round(row().querySelector('.tri-put')?.getBoundingClientRect().width ?? 0), button: !!row().querySelector('button.tri-put'), left: Math.round(row().querySelector('.tri-move').getBoundingClientRect().left) })
+    const e = window.__bt.state.triage.unsure[0]
+    const withGuess = measure()
+    const g = e.guess
+    e.guess = undefined
+    await new Promise((r) => setTimeout(r, 80))
+    const without = measure()
+    e.guess = g
+    await new Promise((r) => setTimeout(r, 80))
+    return { withGuess, without, restored: measure() }
+  })()`)
+  expect(
+    putSlot.withGuess.put === 64 && putSlot.withGuess.button && putSlot.without.put === 64 && !putSlot.without.button && putSlot.without.left === putSlot.withGuess.left && putSlot.restored.button,
+    '拿不准放哪：AI 没猜的行留出「放进去」的位置，「放到」上下对齐',
+    JSON.stringify(putSlot)
+  )
 
   const unsureN = `window.__bt.state.triage.unsure.length`
   const cleanupN = `window.__bt.state.triage.cleanup.length`

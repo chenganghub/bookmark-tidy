@@ -460,10 +460,11 @@ progress {
   font-weight: 600;
 }
 
+/* 500：macOS 上是苹方、SF 的 Medium；Windows 上微软雅黑没有中间字重，600 会变成粗体，500 落到常规体，靠字号和颜色分层 */
 .card-title,
 .row-title {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 20px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1138,6 +1139,11 @@ dialog .actions {
   width: 200px;
 }
 
+.tri-put {
+  flex: none;
+  width: 64px;
+}
+
 .tri-del {
   flex: none;
   color: var(--secondary);
@@ -1158,6 +1164,15 @@ dialog .actions {
 
 .tri-more {
   margin: 8px 0 0 -4px;
+}
+
+/* 设置里收起的网站名单：标题和上面的开关之间留 12px，展开后的输入框和别的字段左边对齐 */
+.settings-more {
+  margin: 12px 0 0 -4px;
+}
+
+.settings-more > .field {
+  margin-left: 4px;
 }
 
 .tri-more .tri-list {

@@ -12,7 +12,7 @@ export type View = 'browse' | 'triage' | 'organize'
 export type Layout = 'cards' | 'list'
 export type SortKey = 'added' | 'used' | 'title'
 export type FilterKey = 'cold' | 'duplicate' | 'login' | 'dead' | 'inbox'
-export type Badge = 'dead' | 'unreachable' | 'login' | 'duplicate' | 'cold' | 'recent'
+export type Badge = 'dead' | 'unreachable' | 'login' | 'duplicate'
 
 export interface Notice {
   kind: 'applied' | 'undone' | 'restored' | 'error' | 'manual'
@@ -142,8 +142,8 @@ export const pendingN = computed(() => (state.triage ? state.triage.unsure.lengt
 const inboxId = computed(() => (state.flat && roots.value.other ? specialFolders(state.flat, roots.value.other.id).inbox : undefined))
 const dupSet = computed(() => new Set((state.issues?.duplicateGroups ?? []).flatMap((g) => g.slice(1))))
 const coldSet = computed(() => new Set(state.issues?.cold ?? []))
-const DAY = 86400000
 
+/** 卡片和列表行上的徽标：只标要你注意的。冷门、近期打开不挂（多数书签都是冷门），用标题行的「冷门」筛选和「最近打开」排序看 */
 export function badgesOf(b: FlatBookmark): Badge[] {
   const out: Badge[] = []
   const st = state.pages[b.url]?.status
@@ -152,12 +152,10 @@ export function badgesOf(b: FlatBookmark): Badge[] {
   // 「被拦」（403 / 429）只说明抓不到，不知道要不要登录：不打徽标，体检的抓取结果里单独计数
   else if (st === 'login') out.push('login')
   if (dupSet.value.has(b.id)) out.push('duplicate')
-  if (coldSet.value.has(b.id)) out.push('cold')
-  else if (b.dateLastUsed && Date.now() - b.dateLastUsed < 30 * DAY) out.push('recent')
   return out
 }
 
-export const badgeText: Record<Badge, string> = { dead: '失效', unreachable: '连不上', login: '要登录', duplicate: '重复', cold: '冷门', recent: '近期打开' }
+export const badgeText: Record<Badge, string> = { dead: '失效', unreachable: '连不上', login: '要登录', duplicate: '重复' }
 export const filterText: Record<FilterKey, string> = { cold: '冷门', duplicate: '重复', login: '要登录', dead: '失效', inbox: '待整理' }
 export const FILTERS: FilterKey[] = ['cold', 'duplicate', 'login', 'dead', 'inbox']
 

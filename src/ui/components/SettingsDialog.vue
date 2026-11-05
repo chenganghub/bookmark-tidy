@@ -166,14 +166,18 @@ async function restore() {
       <label class="check"><input v-model="form.autoNotify" type="checkbox" :disabled="!form.autoFile" />通知</label>
       <label class="check"><input v-model="form.badge" type="checkbox" />工具栏角标</label>
     </div>
-    <label class="field">
-      <span>发正文的网站</span>
-      <textarea v-model="form.textDomains" rows="3" spellcheck="false" :disabled="!form.autoFile"></textarea>
-    </label>
-    <label class="field">
-      <span>不读正文的网站</span>
-      <textarea v-model="form.privateDomains" rows="3" spellcheck="false"></textarea>
-    </label>
+    <!-- 两个网站名单不常改，默认收起（apple-ui：低频的按需展开） -->
+    <details class="settings-more">
+      <summary class="disclose"><Icon name="chevron" :size="14" />网站名单</summary>
+      <label class="field">
+        <span>发正文的网站</span>
+        <textarea v-model="form.textDomains" rows="3" spellcheck="false" :disabled="!form.autoFile"></textarea>
+      </label>
+      <label class="field">
+        <span>不读正文的网站</span>
+        <textarea v-model="form.privateDomains" rows="3" spellcheck="false"></textarea>
+      </label>
+    </details>
     <div class="row-gap" style="margin-top: 24px; gap: 16px">
       <label class="check">
         主题
